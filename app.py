@@ -250,6 +250,8 @@ def page_cambiar_rol():
         else:
             st.error(f"❌ Error {code}: {resp}")
             st.session_state.pop("user_data", None)
+        # Debug temporal
+        st.caption(f"🔎 Debug — HTTP {code}: {resp}")
 
     if "user_data" in st.session_state:
         user = st.session_state["user_data"]
