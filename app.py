@@ -16,6 +16,7 @@ with st.sidebar:
     menu = st.radio(
         label="Navegación",
         options=[
+            "🧑‍💼 Agregar Seller a Visitas",
             "🚛 Asignación de Flotas",
             "🗺️ Cargar Zonas",
             "👤 Cambiar Rol de Usuario",
@@ -23,7 +24,6 @@ with st.sidebar:
             "🔓 Desbloqueo de Contraseña",
             "🔁 Reenviar Webhooks",
             "🏷️ Tipos de Visita y Skills",
-            "🧑‍💼 Agregar Seller a Visitas",
         ],
         label_visibility="collapsed"
     )
@@ -446,9 +446,20 @@ def page_crear_webhook():
 
 
 # ── FEATURE 5: DESBLOQUEO DE CONTRASEÑA ──────────────────────────────────────
+SUPPORT_AGENTS = {
+    "Roger Camacho": "roger.camacho@simpliroute.com",
+    "Itzel Meza": "itzel.meza@simpliroute.com",
+    "David Martinez": "david.martinez@simpliroute.com",
+    "Silmary Guedez": "silmary.guedez@simpliroute.com",
+    "Julio Mares": "julio.mares@simpliroute.com",
+    "Brandon Vargas": "brandon.vargas@simpliroute.com",
+    "Carlos Junior": "carlos.celestino@simpliroute.com",
+    "Jorge Cruz": "jorge.cruz@simpliroute.com",
+}
+
 def page_desbloqueo():
     st.title("🔓 Desbloqueo de Contraseña")
-    st.markdown("Consulta usuarios bloqueados, asígnales un email temporal y envía el link de desbloqueo.")
+    st.markdown("Consulta usuarios bloqueados y envía el link de desbloqueo al correo del agente.")
 
     token = st.text_input("🔑 Token de SimpliRoute", type="password",
                           placeholder="Ingresa tu token aquí", key="token_unlock")
@@ -472,18 +483,18 @@ def page_desbloqueo():
         else:
             st.error(f"❌ Error {code}: {resp}")
 
-    # Restauración pendiente
+    # Botón de restauración pendiente
     if "pending_restore" in st.session_state:
         pr = st.session_state["pending_restore"]
         st.divider()
-        st.subheader("📧 Restauración de email pendiente")
+        st.subheader("📧 Restauración pendiente")
         st.info(f"Usuario: **{pr['user'].get('username')}** · Email original: **{pr['original_email'] or 'Sin email'}**")
-        st.markdown("Una vez que el usuario haya reseteado su contraseña, haz click abajo para restaurar su email original.")
-        if st.button("↩️ Restaurar email original", type="primary", key="btn_restore"):
-            with st.spinner("Restaurando..."):
+        st.markdown("Una vez que el usuario haya reseteado su contraseña exitosamente, presiona el botón para restaurar su email original.")
+        if st.button("↩️ Confirmar y restaurar email original", type="primary", key="btn_restore"):
+            with st.spinner("Restaurando email original..."):
                 code, resp = put_user_full(pr["token"], pr["user"], pr["original_email"])
             if code in [200, 201]:
-                st.success("✅ Email original restaurado.")
+                st.success("✅ Email original restaurado correctamente.")
                 st.session_state.pop("pending_restore", None)
             else:
                 st.error(f"❌ Error al restaurar: {code} — {resp}")
@@ -500,57 +511,58 @@ def page_desbloqueo():
             return f"{name} — {username}" if username != name else name
 
         opciones = {user_label(u): u for u in blocked}
-        selected_label = st.selectbox("Selecciona el usuario:", list(opciones.keys()))
+        selected_label = st.selectbox("Selecciona el usuario bloqueado:", list(opciones.keys()))
         selected_user = opciones[selected_label]
         original_email = selected_user.get("email", "")
-        st.caption(f"📧 Email actual: **{original_email or 'Sin email'}**")
+        st.caption(f"📧 Email actual del usuario: **{original_email or 'Sin email'}**")
 
         st.divider()
-        st.subheader("Email de recuperación")
-        recovery_email = st.text_input("📧 Email al que se enviará el link de desbloqueo",
-                                       placeholder="ejemplo@correo.com", key="recovery_email")
+        st.subheader("Agente que recibirá el link")
+        agent_name = st.selectbox("Selecciona el agente:", list(SUPPORT_AGENTS.keys()))
+        recovery_email = SUPPORT_AGENTS[agent_name]
+        st.caption(f"📨 El link se enviará a: **{recovery_email}**")
 
-        if st.button("🔓 Desbloquear usuario", type="primary", disabled=not recovery_email):
-            if "@" not in recovery_email:
-                st.error("❌ Ingresa un email válido.")
+        st.divider()
+        if st.button("🔓 Enviar link de desbloqueo", type="primary"):
+            tok = st.session_state["unlock_token"]
+            prog = st.progress(0); status = st.empty()
+
+            status.info("1/2 — Asignando email temporal al usuario...")
+            code1, resp1 = put_user_full(tok, selected_user, recovery_email)
+            prog.progress(50)
+
+            if code1 not in [200, 201]:
+                st.error(f"❌ Error al actualizar email: {code1} — {resp1}")
+                status.empty(); prog.empty()
             else:
-                tok = st.session_state["unlock_token"]
-                prog = st.progress(0); status = st.empty()
+                status.info("2/2 — Enviando link de desbloqueo...")
+                try:
+                    r = requests.post(
+                        "https://api.simpliroute.com/v2/auth/unlock/",
+                        headers={"Content-Type": "application/json;charset=UTF-8", "authorization": "null"},
+                        json={"username": selected_user.get("username")},
+                        timeout=30
+                    )
+                    code2 = r.status_code
+                    resp2 = r.json() if r.content else {}
+                except Exception as e:
+                    code2, resp2 = None, str(e)
 
-                status.info("1/2 — Asignando email temporal...")
-                code1, resp1 = put_user_full(tok, selected_user, recovery_email)
-                prog.progress(50)
+                prog.progress(100); status.empty(); prog.empty()
 
-                if code1 not in [200, 201]:
-                    st.error(f"❌ Error al actualizar email: {code1} — {resp1}")
-                    status.empty(); prog.empty()
+                if code2 in [200, 201]:
+                    st.success(f"✅ Link enviado a **{recovery_email}** ({agent_name})")
+                    st.warning("⚠️ Una vez que el usuario haya reseteado su contraseña, presiona el botón de restauración que aparecerá arriba.")
+                    st.session_state["pending_restore"] = {
+                        "user": selected_user,
+                        "original_email": original_email,
+                        "token": tok
+                    }
+                    st.session_state.pop("blocked_users", None)
+                    st.rerun()
                 else:
-                    status.info("2/2 — Enviando link de desbloqueo...")
-                    try:
-                        r = requests.post(
-                            "https://api.simpliroute.com/v2/auth/unlock/",
-                            headers={"Content-Type": "application/json;charset=UTF-8", "authorization": "null"},
-                            json={"username": selected_user.get("username")},
-                            timeout=30
-                        )
-                        code2 = r.status_code
-                        resp2 = r.json() if r.content else {}
-                    except Exception as e:
-                        code2, resp2 = None, str(e)
-
-                    prog.progress(100); status.empty(); prog.empty()
-
-                    if code2 in [200, 201]:
-                        st.success(f"✅ Link enviado a **{recovery_email}**")
-                        st.session_state["pending_restore"] = {
-                            "user": selected_user,
-                            "original_email": original_email,
-                            "token": tok
-                        }
-                        st.session_state.pop("blocked_users", None)
-                    else:
-                        put_user_full(tok, selected_user, original_email)
-                        st.error(f"❌ No se pudo enviar el link. Email restaurado. ({code2}: {resp2})")
+                    put_user_full(tok, selected_user, original_email)
+                    st.error(f"❌ No se pudo enviar el link. Email restaurado. ({code2}: {resp2})")
 
 
 # ── FEATURE 6: REENVIAR WEBHOOKS ─────────────────────────────────────────────
