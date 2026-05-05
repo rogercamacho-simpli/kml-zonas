@@ -9,38 +9,45 @@ from datetime import date
 st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wide")
 
 # ── SIDEBAR ───────────────────────────────────────────────────────────────────
+CORE_OPTIONS = [
+    "🧑‍💼 Agregar Seller a Visitas",
+    "🚛 Asignación de Flotas",
+    "🗺️ Cargar Zonas",
+    "👤 Cambiar Rol de Usuario",
+    "🔔 Crear Webhook",
+    "🔓 Desbloqueo de Contraseña",
+    "🔁 Reenviar Webhooks",
+    "🏷️ Tipos de Visita y Skills",
+]
+TMS_OPTIONS = [
+    "📄 Tipos de Documento",
+    "🚚 Transportistas",
+]
+
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = "🧑‍💼 Agregar Seller a Visitas"
+
+def nav_item(label):
+    is_active = st.session_state["current_page"] == label
+    if st.sidebar.button(label, key=f"nav_{label}", use_container_width=True,
+                         type="primary" if is_active else "secondary"):
+        st.session_state["current_page"] = label
+        st.rerun()
+
 with st.sidebar:
     st.markdown("## 🚀 SimpliRoute Tools")
     st.markdown("---")
     st.markdown("### 🛠️ SimpliRoute Core")
-
-    ALL_OPTIONS = [
-        "🧑‍💼 Agregar Seller a Visitas",
-        "🚛 Asignación de Flotas",
-        "🗺️ Cargar Zonas",
-        "👤 Cambiar Rol de Usuario",
-        "🔔 Crear Webhook",
-        "🔓 Desbloqueo de Contraseña",
-        "🔁 Reenviar Webhooks",
-        "🏷️ Tipos de Visita y Skills",
-        "--- 📦 TMS ---",
-        "📄 Tipos de Documento",
-        "🚚 Transportistas",
-    ]
-
-    selected = st.radio(
-        label="Navegación",
-        options=ALL_OPTIONS,
-        label_visibility="collapsed",
-        key="main_menu"
-    )
-
+    for item in CORE_OPTIONS:
+        nav_item(item)
+    st.markdown("---")
+    st.markdown("### 📦 TMS")
+    for item in TMS_OPTIONS:
+        nav_item(item)
     st.markdown("---")
     st.caption("SimpliRoute Internal Tools v1.0")
 
-# Separador visual no es seleccionable — si se selecciona mostrar página por defecto
-if selected == "--- 📦 TMS ---":
-    selected = "📄 Tipos de Documento"
+selected = st.session_state["current_page"]
 
 
 # ── HELPERS COMPARTIDOS ───────────────────────────────────────────────────────
