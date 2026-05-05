@@ -19,6 +19,7 @@ with st.sidebar:
             "🏷️ Tipos de Visita y Skills",
             "🚛 Asignación de Flotas",
             "🔔 Crear Webhook",
+            "🔁 Reenviar Webhooks",
         ],
         label_visibility="collapsed"
     )
@@ -661,6 +662,86 @@ def page_crear_webhook():
             st.error(f"❌ Error {code}: {resp}")
 
 
+# ── FEATURE 6: REENVIAR WEBHOOKS ─────────────────────────────────────────────
+def resend_webhooks(token, account_id, planned_date, visit_ids):
+    url = "https://api.simpliroute.com/v1/mobile/send-webhooks"
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+    payload = {
+        "account_ids": [int(account_id)],
+        "planned_date": planned_date,
+        "visit_ids": visit_ids
+    }
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=60)
+        return r.status_code, r.json() if r.content else {}
+    except Exception as e:
+        return None, str(e)
+
+def page_reenviar_webhooks():
+    from datetime import date
+    st.title("🔁 Reenviar Webhooks")
+    st.markdown("Reenvía webhooks de visitas específicas a tu sistema.")
+
+    st.info("🔑 Usa el token de tu cuenta de SimpliRoute.")
+    token = st.text_input("🔑 Token de SimpliRoute", type="password",
+                          placeholder="Ingresa tu token aquí", key="token_resend")
+
+    account_id = st.text_input("🏢 ID de la cuenta", placeholder="Ej: 30610")
+
+    st.markdown("**📋 IDs de visita**")
+    st.caption("Pega los IDs de visita uno por línea, por ejemplo:\n```\n799841373\n808472905\n819900123\n```")
+    visit_ids_raw = st.text_area(
+        "IDs de visita",
+        placeholder="799841373\n808472905\n819900123",
+        height=200,
+        label_visibility="collapsed"
+    )
+
+    # Fecha de hoy seteada por backend
+    today = date.today().strftime("%Y-%m-%d")
+    st.caption(f"📅 La fecha utilizada será la de hoy: **{today}**")
+
+    st.divider()
+
+    if st.button("🚀 Reenviar Webhooks", type="primary", disabled=not (token and account_id and visit_ids_raw)):
+        # Parsear IDs
+        visit_ids = []
+        errors = []
+        for line in visit_ids_raw.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                visit_ids.append(int(line))
+            except ValueError:
+                errors.append(line)
+
+        if errors:
+            st.error(f"❌ Los siguientes valores no son IDs válidos: {', '.join(errors)}")
+            return
+        if not visit_ids:
+            st.error("❌ No se encontraron IDs de visita válidos.")
+            return
+
+        with st.spinner(f"Reenviando webhooks para {len(visit_ids)} visitas..."):
+            code, resp = resend_webhooks(token, account_id.strip(), today, visit_ids)
+
+        if code in [200, 201]:
+            st.success(f"✅ Webhooks reenviados correctamente para **{len(visit_ids)} visitas**")
+            if resp:
+                st.json(resp)
+        elif code == 400:
+            st.error(f"❌ Error de validación: {resp}")
+        elif code == 401:
+            st.error("❌ Token inválido o sin permisos.")
+        elif code == 404:
+            st.error("❌ Cuenta no encontrada. Verifica el ID.")
+        elif code is None:
+            st.error(f"❌ Sin conexión: {resp}")
+        else:
+            st.error(f"❌ Error {code}: {resp}")
+
+
 # ── ROUTER ────────────────────────────────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
@@ -672,3 +753,5 @@ elif menu == "🚛 Asignación de Flotas":
     page_asignacion_flotas()
 elif menu == "🔔 Crear Webhook":
     page_crear_webhook()
+elif menu == "🔁 Reenviar Webhooks":
+    page_reenviar_webhooks()
