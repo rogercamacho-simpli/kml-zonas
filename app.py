@@ -210,11 +210,13 @@ def get_user(user_id, auth_token):
     except Exception as e:
         return None, str(e)
 
-def update_user_role(user_id, new_role_key, auth_token):
+def update_user_role(user_id, new_role_key, auth_token, user_data={}):
     url = f"http://api.simpliroute.com/v1/accounts/users/{user_id}/"
     headers = {"Authorization": f"Token {auth_token}", "Content-Type": "application/json"}
     # Solo enviar los campos de rol, todos en False excepto el nuevo
     payload = {key: (key == new_role_key) for key in ALL_ROLE_KEYS}
+    payload["username"] = user_data.get("username", "")
+    payload["name"] = user_data.get("name", "")
     try:
         r = requests.put(url, headers=headers, json=payload, timeout=15)
         return r.status_code, r.json()
@@ -250,8 +252,7 @@ def page_cambiar_rol():
         else:
             st.error(f"❌ Error {code}: {resp}")
             st.session_state.pop("user_data", None)
-        # Debug temporal
-        st.caption(f"🔎 Debug — HTTP {code}: {resp}")
+
 
     if "user_data" in st.session_state:
         user = st.session_state["user_data"]
@@ -260,9 +261,9 @@ def page_cambiar_rol():
         st.divider()
         st.subheader("Información del usuario")
         col1, col2, col3 = st.columns(3)
-        col1.metric("Nombre", user.get("name", "—"))
-        col2.metric("Username", user.get("username", "—"))
-        col3.metric("Rol actual", current_label)
+        col1.markdown(f"**Nombre**<br>{user.get('name', '—')}", unsafe_allow_html=True)
+        col2.markdown(f"**Username**<br>{user.get('username', '—')}", unsafe_allow_html=True)
+        col3.markdown(f"**Rol actual**<br>{current_label}", unsafe_allow_html=True)
         st.caption(f"📧 {user.get('email', '—')} · Estado: {user.get('status', '—')}")
 
         st.divider()
@@ -281,7 +282,8 @@ def page_cambiar_rol():
                     code, resp = update_user_role(
                         user["id"],
                         nuevo_rol_key,
-                        st.session_state["user_token"]
+                        st.session_state["user_token"],
+                        user
                     )
                 if code == 200:
                     st.success(f"✅ Rol actualizado correctamente a **{nuevo_rol_label}**")
