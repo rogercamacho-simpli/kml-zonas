@@ -910,7 +910,7 @@ def page_desbloqueo():
             else:
                 st.session_state["blocked_users"] = blocked
                 st.session_state["unlock_token"] = token
-                st.success(f"⚠️ {len(blocked)} usuario(s) bloqueado(s) encontrado(s)")
+                st.rerun()
         elif code == 401:
             st.error("❌ Token inválido o sin permisos.")
             st.session_state.pop("blocked_users", None)
