@@ -287,7 +287,13 @@ def page_cambiar_rol():
                     )
                 if code == 200:
                     st.success(f"✅ Rol actualizado correctamente a **{nuevo_rol_label}**")
-                    st.session_state.pop("user_data", None)
+                    # Recargar datos actualizados del usuario
+                    _, fresh = get_user(user["id"], st.session_state["user_token"])
+                    if isinstance(fresh, dict) and "id" in fresh:
+                        st.session_state["user_data"] = fresh
+                    else:
+                        st.session_state.pop("user_data", None)
+                    st.rerun()
                 elif code == 401:
                     st.error("❌ Token inválido o sin permisos.")
                 elif code == 400:
