@@ -4,13 +4,31 @@ import io
 import re
 import requests
 
-st.set_page_config(page_title="KML → SimpliRoute Zonas", page_icon="🗺️")
-st.title("🗺️ KML → SimpliRoute Zonas")
-st.markdown("Sube tu archivo KML o RTF, ingresa tu token y carga las zonas directo a SimpliRoute.")
+st.set_page_config(
+    page_title="SimpliRoute Tools",
+    page_icon="🚀",
+    layout="wide"
+)
 
-# --- Token input ---
-token = st.text_input("🔑 Token de SimpliRoute", type="password", placeholder="Ingresa tu token aquí")
+# --- Sidebar menu ---
+with st.sidebar:
+    st.image("https://simpliroute.com/wp-content/uploads/2021/03/logo-simpliroute.png", width=180)
+    st.markdown("---")
+    st.markdown("### 🛠️ Herramientas")
+    menu = st.radio(
+        label="",
+        options=[
+            "🗺️ Cargar Zonas",
+            # Agrega más features aquí
+        ],
+        label_visibility="collapsed"
+    )
+    st.markdown("---")
+    st.caption("SimpliRoute Internal Tools v1.0")
 
+# ─────────────────────────────────────────
+# FEATURE: CARGAR ZONAS
+# ─────────────────────────────────────────
 def decode_file(raw_bytes):
     for enc in ["utf-8", "latin-1", "cp1252"]:
         try:
@@ -81,83 +99,97 @@ def upload_zone(name, coordinates, auth_token):
         "authorization": f"Token {auth_token}",
         "content-type": "application/json"
     }
-    payload = {
-        "name": name,
-        "coordinates": coordinates,
-        "vehicles": []
-    }
+    payload = {"name": name, "coordinates": coordinates, "vehicles": []}
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=15)
         return response.status_code, response.json()
     except Exception as e:
         return None, str(e)
 
-# --- UI ---
-uploaded = st.file_uploader("📂 Sube tu archivo KML o RTF", type=["kml", "rtf", "txt"])
+def page_cargar_zonas():
+    st.title("🗺️ Cargar Zonas")
+    st.markdown("Sube tu archivo KML o RTF, ingresa tu token y carga las zonas directo a SimpliRoute.")
 
-if uploaded:
-    content = uploaded.read()
-    with st.spinner("Procesando archivo..."):
-        try:
-            text = decode_file(content)
-            if text.strip().startswith("{\\rtf") or "\\rtf" in text[:100]:
-                text = strip_rtf_codes(text)
-            polygons = parse_polygons(text)
-            error = None
-        except Exception as e:
-            polygons = []
-            error = str(e)
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", placeholder="Ingresa tu token aquí")
+    uploaded = st.file_uploader("📂 Sube tu archivo KML o RTF", type=["kml", "rtf", "txt"])
 
-    if error:
-        st.error(f"Error: {error}")
-    elif polygons:
-        st.success(f"✅ {len(polygons)} polígono(s) encontrado(s)")
+    if uploaded:
+        content = uploaded.read()
+        with st.spinner("Procesando archivo..."):
+            try:
+                text = decode_file(content)
+                if text.strip().startswith("{\\rtf") or "\\rtf" in text[:100]:
+                    text = strip_rtf_codes(text)
+                polygons = parse_polygons(text)
+                error = None
+            except Exception as e:
+                polygons = []
+                error = str(e)
 
-        # Preview
-        st.subheader("Preview")
-        for p in polygons:
-            with st.expander(f"📍 {p['name']} — {len(p['coords'])} puntos"):
-                st.code(coords_to_str(p["coords"][:3]) + ",...]", language=None)
+        if error:
+            st.error(f"Error: {error}")
+        elif polygons:
+            st.success(f"✅ {len(polygons)} polígono(s) encontrado(s)")
 
-        # Descargar Excel
-        excel_buf = generate_excel(polygons)
-        st.download_button(
-            label="⬇️ Descargar Excel",
-            data=excel_buf,
-            file_name="ZONES.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.subheader("Preview")
+            for p in polygons:
+                with st.expander(f"📍 {p['name']} — {len(p['coords'])} puntos"):
+                    st.code(coords_to_str(p["coords"][:3]) + ",...]", language=None)
 
-        st.divider()
+            excel_buf = generate_excel(polygons)
+            st.download_button(
+                label="⬇️ Descargar Excel",
+                data=excel_buf,
+                file_name="ZONES.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-        # Cargar a SimpliRoute
-        st.subheader("📡 Cargar zonas a SimpliRoute")
-        if not token:
-            st.warning("⚠️ Ingresa tu token de SimpliRoute arriba para poder cargar las zonas.")
+            st.divider()
+            st.subheader("📡 Cargar zonas a SimpliRoute")
+
+            if not token:
+                st.warning("⚠️ Ingresa tu token de SimpliRoute arriba para poder cargar las zonas.")
+            else:
+                if st.button("🚀 Cargar zonas a SimpliRoute", type="primary"):
+                    results = []
+                    progress = st.progress(0)
+                    status_container = st.empty()
+
+                    for i, p in enumerate(polygons):
+                        status_container.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
+                        code, resp = upload_zone(p["name"], coords_to_str(p["coords"]), token)
+                        results.append({"name": p["name"], "code": code, "resp": resp})
+                        progress.progress((i + 1) / len(polygons))
+
+                    status_container.empty()
+                    progress.empty()
+
+                    st.subheader("Resultados")
+                    ok = sum(1 for r in results if r["code"] in [200, 201])
+                    fail = len(results) - ok
+                    st.markdown(f"✅ **{ok} zonas cargadas correctamente** | ❌ **{fail} con error**")
+
+                    for r in results:
+                        if r["code"] in [200, 201]:
+                            st.success(f"✅ {r['name']} — Zona creada correctamente")
+                        elif r["code"] == 400:
+                            st.warning(f"⚠️ {r['name']} — Ya existe una zona con este nombre en la cuenta")
+                        elif r["code"] == 401:
+                            st.error(f"❌ {r['name']} — Token inválido o sin permisos")
+                        elif r["code"] is None:
+                            st.error(f"❌ {r['name']} — Sin conexión: {r['resp']}")
+                        else:
+                            st.error(f"❌ {r['name']} — Error {r['code']}: {r['resp']}")
         else:
-            if st.button("🚀 Cargar zonas a SimpliRoute", type="primary"):
-                results = []
-                progress = st.progress(0)
-                status_container = st.empty()
+            st.warning("No se encontraron polígonos en el archivo.")
 
-                for i, p in enumerate(polygons):
-                    status_container.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
-                    code, resp = upload_zone(p["name"], coords_to_str(p["coords"]), token)
-                    results.append({"name": p["name"], "code": code, "resp": resp})
-                    progress.progress((i + 1) / len(polygons))
+# ─────────────────────────────────────────
+# ROUTER
+# ─────────────────────────────────────────
+if menu == "🗺️ Cargar Zonas":
+    page_cargar_zonas()
 
-                status_container.empty()
-                progress.empty()
-
-                st.subheader("Resultados")
-                ok = sum(1 for r in results if r["code"] in [200, 201])
-                fail = len(results) - ok
-                st.markdown(f"✅ **{ok} zonas cargadas correctamente** | ❌ **{fail} con error**")
-
-                for r in results:
-                    if r["code"] in [200, 201]:
-                        st.success(f"✅ {r['name']} — Zona creada correctamente")
-                    else:
-                        st.error(f"❌ {r['name']} — Error {r['code']}: {r['resp']}")
-    else:
-        st.warning("No se encontraron polígonos en el archivo.")
+# Para agregar una nueva feature:
+# 1. Agrega la opción en el st.radio del sidebar
+# 2. Crea una función page_nueva_feature()
+# 3. Agrega el if menu == "..." al router
