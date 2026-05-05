@@ -20,6 +20,7 @@ with st.sidebar:
             "🔔 Crear Webhook",
             "🔁 Reenviar Webhooks",
             "🏷️ Tipos de Visita y Skills",
+            "🔓 Desbloqueo de Contraseña",
             "🧑‍💼 Agregar Seller a Visitas",
         ],
         label_visibility="collapsed"
@@ -852,6 +853,140 @@ def page_agregar_seller():
                     st.error(f"❌ Error {code}: {resp}")
 
 
+# ── FEATURE 8: DESBLOQUEO DE CONTRASEÑA ──────────────────────────────────────
+def put_user_email(token, user, new_email):
+    url = f"http://api.simpliroute.com/v1/accounts/users/{user['id']}/"
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+    payload = {
+        "id": user["id"],
+        "username": user.get("username", ""),
+        "name": user.get("name", ""),
+        "phone": user.get("phone", ""),
+        "email": new_email,
+        "is_owner": user.get("is_owner", False),
+        "is_admin": user.get("is_admin", False),
+        "is_driver": user.get("is_driver", False),
+        "is_codriver": user.get("is_codriver", False),
+        "is_router_jr": user.get("is_router_jr", False),
+        "is_monitor": user.get("is_monitor", False),
+        "is_coordinator": user.get("is_coordinator", False),
+        "is_router": user.get("is_router", False),
+        "is_staff": user.get("is_staff", False),
+        "is_seller_viewer": user.get("is_seller_viewer", False),
+        "is_seller": user.get("is_seller", False),
+        "blocked": user.get("blocked", False),
+        "status": user.get("status", "active"),
+    }
+    try:
+        r = requests.put(url, headers=headers, json=payload, timeout=30)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def post_unlock(username):
+    url = "https://api.simpliroute.com/v2/auth/unlock/"
+    headers = {"Content-Type": "application/json;charset=UTF-8", "authorization": "null"}
+    try:
+        r = requests.post(url, headers=headers, json={"username": username}, timeout=30)
+        return r.status_code, r.json() if r.content else {}
+    except Exception as e:
+        return None, str(e)
+
+def page_desbloqueo():
+    st.title("🔓 Desbloqueo de Contraseña")
+    st.markdown("Consulta usuarios bloqueados, asígnales un email temporal y envía el link de desbloqueo.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password",
+                          placeholder="Ingresa tu token aquí", key="token_unlock")
+
+    if st.button("🔍 Consultar usuarios bloqueados", type="primary", disabled=not token):
+        with st.spinner("Consultando usuarios..."):
+            code, resp = get_users_list(token)
+        if code == 200:
+            blocked = [u for u in resp if u.get("blocked") is True]
+            if not blocked:
+                st.info("✅ No hay usuarios bloqueados en esta cuenta.")
+                st.session_state.pop("blocked_users", None)
+            else:
+                st.session_state["blocked_users"] = blocked
+                st.session_state["unlock_token"] = token
+                st.success(f"⚠️ {len(blocked)} usuario(s) bloqueado(s) encontrado(s)")
+        elif code == 401:
+            st.error("❌ Token inválido o sin permisos.")
+            st.session_state.pop("blocked_users", None)
+        elif code is None:
+            st.error(f"❌ Sin conexión: {resp}")
+            st.session_state.pop("blocked_users", None)
+        else:
+            st.error(f"❌ Error {code}: {resp}")
+            st.session_state.pop("blocked_users", None)
+
+    if "blocked_users" in st.session_state:
+        blocked = st.session_state["blocked_users"]
+
+        st.divider()
+        st.subheader("Usuario bloqueado")
+
+        def user_label(u):
+            name = u.get("name") or u.get("username") or str(u.get("id"))
+            username = u.get("username", "")
+            return f"{name} — {username}" if username != name else name
+
+        opciones = {user_label(u): u for u in blocked}
+        selected_label = st.selectbox("Selecciona el usuario:", list(opciones.keys()))
+        selected_user = opciones[selected_label]
+
+        original_email = selected_user.get("email", "")
+        st.caption(f"📧 Email actual: **{original_email if original_email else 'Sin email'}**")
+
+        st.divider()
+        st.subheader("Email de recuperación")
+        st.markdown("Ingresa el email al que se enviará el link de desbloqueo.")
+        recovery_email = st.text_input("📧 Email de recuperación",
+                                       placeholder="ejemplo@correo.com",
+                                       key="recovery_email")
+
+        if st.button("🔓 Desbloquear usuario", type="primary",
+                     disabled=not recovery_email):
+
+            if "@" not in recovery_email:
+                st.error("❌ Ingresa un email válido.")
+            else:
+                tok = st.session_state["unlock_token"]
+                progress = st.progress(0)
+                status = st.empty()
+
+                # Paso 1: SET email temporal
+                status.info("1/3 — Asignando email temporal al usuario...")
+                code1, resp1 = put_user_email(tok, selected_user, recovery_email)
+                progress.progress(33)
+                if code1 not in [200, 201]:
+                    st.error(f"❌ Error al actualizar email: {code1} — {resp1}")
+                    status.empty(); progress.empty()
+                else:
+                    # Paso 2: Enviar link de desbloqueo
+                    status.info("2/3 — Enviando link de desbloqueo...")
+                    code2, resp2 = post_unlock(selected_user.get("username"))
+                    progress.progress(66)
+                    if code2 not in [200, 201]:
+                        st.warning(f"⚠️ El link de desbloqueo respondió con código {code2}: {resp2}")
+
+                    # Paso 3: Restaurar email original
+                    status.info("3/3 — Restaurando email original...")
+                    code3, resp3 = put_user_email(tok, selected_user, original_email)
+                    progress.progress(100)
+                    status.empty(); progress.empty()
+
+                    if code3 not in [200, 201]:
+                        st.warning(f"⚠️ No se pudo restaurar el email original: {code3} — {resp3}")
+
+                    if code2 in [200, 201]:
+                        st.success(f"✅ Link de desbloqueo enviado a **{recovery_email}** para el usuario **{selected_user.get('username')}**")
+                        st.session_state.pop("blocked_users", None)
+                    else:
+                        st.error("❌ No se pudo enviar el link de desbloqueo. El email fue restaurado.")
+
+
 # ── ROUTER ────────────────────────────────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
@@ -863,5 +998,7 @@ elif menu == "🚛 Asignación de Flotas":
     page_asignacion_flotas()
 elif menu == "🔔 Crear Webhook":
     page_crear_webhook()
+elif menu == "🔓 Desbloqueo de Contraseña":
+    page_desbloqueo()
 elif menu == "🧑‍💼 Agregar Seller a Visitas":
     page_agregar_seller()
