@@ -12,9 +12,10 @@ st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wid
 with st.sidebar:
     st.markdown("## 🚀 SimpliRoute Tools")
     st.markdown("---")
-    st.markdown("### 🛠️ Herramientas")
+
+    st.markdown("### 🛠️ SimpliRoute Core")
     menu = st.radio(
-        label="Navegación",
+        label="Navegación Core",
         options=[
             "🧑‍💼 Agregar Seller a Visitas",
             "🚛 Asignación de Flotas",
@@ -25,10 +26,43 @@ with st.sidebar:
             "🔁 Reenviar Webhooks",
             "🏷️ Tipos de Visita y Skills",
         ],
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="menu_core"
     )
+
+    st.markdown("---")
+    st.markdown("### 📦 TMS")
+    menu_tms = st.radio(
+        label="Navegación TMS",
+        options=[
+            "📄 Tipos de Documento",
+            "🚚 Transportistas",
+        ],
+        label_visibility="collapsed",
+        key="menu_tms"
+    )
+
     st.markdown("---")
     st.caption("SimpliRoute Internal Tools v1.0")
+
+# Determinar cuál sección está activa basado en cuál cambió último
+if "last_menu" not in st.session_state:
+    st.session_state["last_menu"] = "core"
+
+# Detectar cambio de sección
+if "prev_core" not in st.session_state:
+    st.session_state["prev_core"] = menu
+if "prev_tms" not in st.session_state:
+    st.session_state["prev_tms"] = menu_tms
+
+if menu != st.session_state["prev_core"]:
+    st.session_state["last_menu"] = "core"
+    st.session_state["prev_core"] = menu
+elif menu_tms != st.session_state["prev_tms"]:
+    st.session_state["last_menu"] = "tms"
+    st.session_state["prev_tms"] = menu_tms
+
+active_section = st.session_state["last_menu"]
 
 
 # ── HELPERS COMPARTIDOS ───────────────────────────────────────────────────────
@@ -743,6 +777,145 @@ def page_agregar_seller():
             if code in [200, 201]: st.success(f"✅ Seller asignado a **{len(visit_ids)} visitas**")
             elif code == 401: st.error("❌ Token inválido.")
             else: st.error(f"❌ Error {code}")
+
+
+# ── TMS FEATURE 1: TIPOS DE DOCUMENTO ────────────────────────────────────────
+COUNTRY_OPTIONS = ["PE", "CL", "MX", "CO", "AR", "EC", "BO", "UY", "PY", "VE"]
+ENTITY_TYPES = ["provider", "customer", "driver", "vehicle"]
+
+def make_template_doc_types():
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Tipos de Documento"
+    ws.append(["name", "entity_type"])
+    ws.append(["DNI", "driver"])
+    ws.append(["RUC", "provider"])
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 25
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+def page_tms_document_types():
+    st.title("📄 Tipos de Documento TMS")
+    st.markdown("Crea tipos de documento de manera masiva en TMS.")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        token = st.text_input("🔑 Token", type="password", placeholder="Token SimpliRoute", key="token_doctype")
+    with col2:
+        account_id = st.text_input("🏢 Account ID", placeholder="Ej: 9695", key="account_doctype")
+    with col3:
+        country = st.selectbox("🌎 País", COUNTRY_OPTIONS, key="country_doctype")
+
+    st.download_button("📥 Descargar plantilla", data=make_template_doc_types(),
+                       file_name="plantilla_tipos_documento.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    doc_file = st.file_uploader("📂 Sube tu Excel", type=["xlsx"], key="upload_doctype")
+
+    if doc_file:
+        try:
+            rows = read_excel_column(doc_file, ["name", "entity_type"])
+            st.success(f"✅ {len(rows)} tipo(s) encontrado(s)")
+            with st.expander("Ver lista"):
+                for r in rows:
+                    st.markdown(f"- **{r['name']}** → `{r['entity_type']}`")
+        except Exception as e:
+            rows = []; st.error(f"Error: {e}")
+
+        if rows:
+            if not (token and account_id):
+                st.warning("⚠️ Completa el token y account ID.")
+            else:
+                if st.button("🚀 Crear Tipos de Documento", type="primary", key="btn_doctype"):
+                    results = []; prog = st.progress(0); status = st.empty()
+                    for i, row in enumerate(rows):
+                        status.info(f"Creando: **{row['name']}** ({i+1}/{len(rows)})")
+                        try:
+                            r = requests.post(
+                                "https://api.simpliroute.com/tms/api/v1/document-types/",
+                                headers={
+                                    "Authorization": f"Token {token}",
+                                    "Related-Account": account_id,
+                                    "Content-Type": "application/json"
+                                },
+                                json={"name": row["name"], "country": country,
+                                      "entity_type": row["entity_type"], "status": "active"},
+                                timeout=30
+                            )
+                            code, resp = r.status_code, r.json()
+                        except Exception as e:
+                            code, resp = None, str(e)
+                        results.append({"name": row["name"], "code": code, "resp": resp})
+                        prog.progress((i+1)/len(rows))
+                    status.empty(); prog.empty()
+                    show_results(results, "name")
+
+
+# ── TMS FEATURE 2: TRANSPORTISTAS ────────────────────────────────────────────
+def make_template_transportistas():
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Transportistas"
+    ws.append(["trade_name", "legal_name", "tax_id_number"])
+    ws.append(["Transportes Sur S.A.", "Transportes Sur Sociedad Anónima", "20123456789"])
+    ws.append(["LogiRápido", "LogiRápido E.I.R.L.", "20987654321"])
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 35
+    ws.column_dimensions["C"].width = 20
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+def page_tms_transportistas():
+    st.title("🚚 Transportistas TMS")
+    st.markdown("Crea transportistas de manera masiva en TMS.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        token = st.text_input("🔑 Token", type="password", placeholder="Token SimpliRoute", key="token_transp")
+    with col2:
+        account_id = st.text_input("🏢 Account ID", placeholder="Ej: 82761", key="account_transp")
+
+    st.download_button("📥 Descargar plantilla", data=make_template_transportistas(),
+                       file_name="plantilla_transportistas.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    transp_file = st.file_uploader("📂 Sube tu Excel", type=["xlsx"], key="upload_transp")
+
+    if transp_file:
+        try:
+            rows = read_excel_column(transp_file, ["trade_name", "legal_name", "tax_id_number"])
+            st.success(f"✅ {len(rows)} transportista(s) encontrado(s)")
+            with st.expander("Ver lista"):
+                for r in rows:
+                    st.markdown(f"- **{r['trade_name']}** | {r['legal_name']} | `{r['tax_id_number']}`")
+        except Exception as e:
+            rows = []; st.error(f"Error: {e}")
+
+        if rows:
+            if not (token and account_id):
+                st.warning("⚠️ Completa el token y account ID.")
+            else:
+                if st.button("🚀 Crear Transportistas", type="primary", key="btn_transp"):
+                    results = []; prog = st.progress(0); status = st.empty()
+                    for i, row in enumerate(rows):
+                        status.info(f"Creando: **{row['trade_name']}** ({i+1}/{len(rows)})")
+                        try:
+                            r = requests.post(
+                                "https://api.simpliroute.com/tms/api/v1/transportation-providers/",
+                                headers={
+                                    "Authorization": f"Token {token}",
+                                    "Content-Type": "application/json"
+                                },
+                                json={
+                                    "trade_name": row["trade_name"],
+                                    "legal_name": row["legal_name"],
+                                    "tax_id_number": row["tax_id_number"],
+                                    "account_id": int(account_id)
+                                },
+                                timeout=30
+                            )
+                            code, resp = r.status_code, r.json()
+                        except Exception as e:
+                            code, resp = None, str(e)
+                        results.append({"trade_name": row["trade_name"], "code": code, "resp": resp})
+                        prog.progress((i+1)/len(rows))
+                    status.empty(); prog.empty()
+                    show_results(results, "trade_name")
 
 
 # ── ROUTER ────────────────────────────────────────────────────────────────────
