@@ -15,6 +15,18 @@ with st.sidebar:
 
     if "active_section" not in st.session_state:
         st.session_state["active_section"] = "core"
+    if "menu_core" not in st.session_state:
+        st.session_state["menu_core"] = "🧑‍💼 Agregar Seller a Visitas"
+    if "menu_tms" not in st.session_state:
+        st.session_state["menu_tms"] = None
+
+    def on_core_change():
+        st.session_state["active_section"] = "core"
+        st.session_state["menu_tms"] = None
+
+    def on_tms_change():
+        st.session_state["active_section"] = "tms"
+        st.session_state["menu_core"] = None
 
     st.markdown("### 🛠️ SimpliRoute Core")
     menu = st.radio(
@@ -31,8 +43,26 @@ with st.sidebar:
         ],
         label_visibility="collapsed",
         key="menu_core",
-        index=0 if st.session_state["active_section"] == "core" else None,
-        on_change=lambda: st.session_state.update({"active_section": "core"})
+        index=None if st.session_state.get("menu_core") is None else [
+            "🧑‍💼 Agregar Seller a Visitas",
+            "🚛 Asignación de Flotas",
+            "🗺️ Cargar Zonas",
+            "👤 Cambiar Rol de Usuario",
+            "🔔 Crear Webhook",
+            "🔓 Desbloqueo de Contraseña",
+            "🔁 Reenviar Webhooks",
+            "🏷️ Tipos de Visita y Skills",
+        ].index(st.session_state["menu_core"]) if st.session_state.get("menu_core") in [
+            "🧑‍💼 Agregar Seller a Visitas",
+            "🚛 Asignación de Flotas",
+            "🗺️ Cargar Zonas",
+            "👤 Cambiar Rol de Usuario",
+            "🔔 Crear Webhook",
+            "🔓 Desbloqueo de Contraseña",
+            "🔁 Reenviar Webhooks",
+            "🏷️ Tipos de Visita y Skills",
+        ] else None,
+        on_change=on_core_change
     )
 
     st.markdown("---")
@@ -45,14 +75,22 @@ with st.sidebar:
         ],
         label_visibility="collapsed",
         key="menu_tms",
-        index=0 if st.session_state["active_section"] == "tms" else None,
-        on_change=lambda: st.session_state.update({"active_section": "tms"})
+        index=None if st.session_state.get("menu_tms") is None else [
+            "📄 Tipos de Documento",
+            "🚚 Transportistas",
+        ].index(st.session_state["menu_tms"]) if st.session_state.get("menu_tms") in [
+            "📄 Tipos de Documento",
+            "🚚 Transportistas",
+        ] else None,
+        on_change=on_tms_change
     )
 
     st.markdown("---")
     st.caption("SimpliRoute Internal Tools v1.0")
 
 active_section = st.session_state["active_section"]
+menu = st.session_state.get("menu_core")
+menu_tms = st.session_state.get("menu_tms")
 
 
 # ── HELPERS COMPARTIDOS ───────────────────────────────────────────────────────
