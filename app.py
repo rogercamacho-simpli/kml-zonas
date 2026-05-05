@@ -921,7 +921,21 @@ def page_desbloqueo():
             st.error(f"❌ Error {code}: {resp}")
             st.session_state.pop("blocked_users", None)
 
-    if "blocked_users" in st.session_state:
+    # Restauración pendiente
+    if "pending_restore" in st.session_state:
+        pr = st.session_state["pending_restore"]
+        st.divider()
+        st.subheader("📧 Restauración de email pendiente")
+        st.info(f"Usuario: **{pr['user'].get('username')}** · Email original: **{pr['original_email'] if pr['original_email'] else 'Sin email'}**")
+        st.markdown("Una vez que el usuario haya reseteado su contraseña exitosamente, haz click abajo para restaurar su email original.")
+        if st.button("↩️ Restaurar email original", type="primary", key="btn_restore"):
+            with st.spinner("Restaurando email original..."):
+                code, resp = put_user_email(pr["token"], pr["user"], pr["original_email"])
+            if code in [200, 201]:
+                st.success("✅ Email original restaurado correctamente.")
+                st.session_state.pop("pending_restore", None)
+            else:
+                st.error(f"❌ Error al restaurar email: {code} — {resp}")
         blocked = st.session_state["blocked_users"]
 
         st.divider()
@@ -957,34 +971,32 @@ def page_desbloqueo():
                 status = st.empty()
 
                 # Paso 1: SET email temporal
-                status.info("1/3 — Asignando email temporal al usuario...")
+                status.info("1/2 — Asignando email temporal al usuario...")
                 code1, resp1 = put_user_email(tok, selected_user, recovery_email)
-                progress.progress(33)
+                progress.progress(50)
                 if code1 not in [200, 201]:
                     st.error(f"❌ Error al actualizar email: {code1} — {resp1}")
                     status.empty(); progress.empty()
                 else:
                     # Paso 2: Enviar link de desbloqueo
-                    status.info("2/3 — Enviando link de desbloqueo...")
+                    status.info("2/2 — Enviando link de desbloqueo...")
                     code2, resp2 = post_unlock(selected_user.get("username"))
-                    progress.progress(66)
-                    if code2 not in [200, 201]:
-                        st.warning(f"⚠️ El link de desbloqueo respondió con código {code2}: {resp2}")
-
-                    # Paso 3: Restaurar email original
-                    status.info("3/3 — Restaurando email original...")
-                    code3, resp3 = put_user_email(tok, selected_user, original_email)
                     progress.progress(100)
                     status.empty(); progress.empty()
 
-                    if code3 not in [200, 201]:
-                        st.warning(f"⚠️ No se pudo restaurar el email original: {code3} — {resp3}")
-
                     if code2 in [200, 201]:
-                        st.success(f"✅ Link de desbloqueo enviado a **{recovery_email}** para el usuario **{selected_user.get('username')}**")
+                        st.success(f"✅ Link de desbloqueo enviado a **{recovery_email}**")
+                        st.warning(f"⚠️ El email del usuario **{selected_user.get('username')}** quedó temporalmente como `{recovery_email}`. Una vez que el usuario haya reseteado su contraseña, haz click en el botón de abajo para restaurar el email original.")
+                        st.session_state["pending_restore"] = {
+                            "user": selected_user,
+                            "original_email": original_email,
+                            "token": tok
+                        }
                         st.session_state.pop("blocked_users", None)
                     else:
-                        st.error("❌ No se pudo enviar el link de desbloqueo. El email fue restaurado.")
+                        # Si falla el unlock, restaurar inmediatamente
+                        put_user_email(tok, selected_user, original_email)
+                        st.error(f"❌ No se pudo enviar el link. El email fue restaurado. ({code2}: {resp2})")
 
 
 # ── ROUTER ────────────────────────────────────────────────────────────────────
