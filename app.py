@@ -896,12 +896,15 @@ def page_desbloqueo():
     st.title("🔓 Desbloqueo de Contraseña")
     st.markdown("Consulta usuarios bloqueados, asígnales un email temporal y envía el link de desbloqueo.")
 
+    if "unlock_token_input" not in st.session_state:
+        st.session_state["unlock_token_input"] = ""
+
     token = st.text_input("🔑 Token de SimpliRoute", type="password",
-                          placeholder="Ingresa tu token aquí", key="token_unlock")
+                          placeholder="Ingresa tu token aquí", key="unlock_token_input")
 
     if st.button("🔍 Consultar usuarios bloqueados", type="primary", disabled=not token):
         with st.spinner("Consultando usuarios..."):
-            code, resp = get_users_list(token)
+            code, resp = get_users_list(st.session_state["unlock_token_input"])
         if code == 200:
             blocked = [u for u in resp if u.get("blocked") is True]
             if not blocked:
@@ -909,7 +912,7 @@ def page_desbloqueo():
                 st.session_state.pop("blocked_users", None)
             else:
                 st.session_state["blocked_users"] = blocked
-                st.session_state["unlock_token"] = token
+                st.session_state["unlock_token"] = st.session_state["unlock_token_input"]
                 st.rerun()
         elif code == 401:
             st.error("❌ Token inválido o sin permisos.")
