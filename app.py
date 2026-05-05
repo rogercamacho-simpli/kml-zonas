@@ -20,6 +20,7 @@ with st.sidebar:
             "🔔 Crear Webhook",
             "🔁 Reenviar Webhooks",
             "🏷️ Tipos de Visita y Skills",
+            "🧑‍💼 Agregar Seller a Visitas",
         ],
         label_visibility="collapsed"
     )
@@ -742,6 +743,115 @@ def page_reenviar_webhooks():
             st.error(f"❌ Error {code}: {resp}")
 
 
+# ── FEATURE 7: AGREGAR SELLER A VISITAS ──────────────────────────────────────
+def get_sellers(token):
+    url = "http://api.simpliroute.com/v1/sellers/"
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+    try:
+        r = requests.get(url, headers=headers, timeout=60)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def patch_visits_seller(token, visit_ids, seller_uuid):
+    url = "http://api.simpliroute.com/v1/routes/visits/"
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+    payload = [{"id": vid, "seller": seller_uuid} for vid in visit_ids]
+    try:
+        r = requests.patch(url, headers=headers, json=payload, timeout=120)
+        return r.status_code, r.json() if r.content else {}
+    except Exception as e:
+        return None, str(e)
+
+def page_agregar_seller():
+    st.title("🧑‍💼 Agregar Seller a Visitas")
+    st.markdown("Consulta los sellers de la cuenta, selecciona uno y asígnalo a una lista de visitas.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password",
+                          placeholder="Ingresa tu token aquí", key="token_seller")
+
+    if st.button("🔍 Consultar Sellers", type="primary", disabled=not token):
+        with st.spinner("Consultando sellers..."):
+            code, resp = get_sellers(token)
+        if code == 200:
+            if not resp:
+                st.warning("⚠️ No se encontraron sellers en esta cuenta.")
+                st.session_state.pop("sellers", None)
+            else:
+                st.session_state["sellers"] = resp
+                st.session_state["seller_token"] = token
+                st.success(f"✅ {len(resp)} seller(s) encontrado(s)")
+        elif code == 401:
+            st.error("❌ Token inválido o sin permisos.")
+            st.session_state.pop("sellers", None)
+        elif code is None:
+            st.error(f"❌ Sin conexión: {resp}")
+            st.session_state.pop("sellers", None)
+        else:
+            st.error(f"❌ Error {code}: {resp}")
+            st.session_state.pop("sellers", None)
+
+    if "sellers" in st.session_state:
+        sellers = st.session_state["sellers"]
+
+        st.divider()
+        st.subheader("Selecciona un Seller")
+
+        # Construir opciones — usar nombre o email o uuid como fallback
+        def seller_label(s):
+            name = s.get("name") or s.get("username") or s.get("email") or s.get("uuid", "Sin nombre")
+            email = s.get("email", "")
+            return f"{name} — {email}" if email and email != name else name
+
+        opciones = {seller_label(s): s for s in sellers}
+        selected_label = st.selectbox("Seller:", list(opciones.keys()))
+        selected_seller = opciones[selected_label]
+        seller_uuid = selected_seller.get("uuid") or selected_seller.get("id")
+
+        st.divider()
+        st.subheader("IDs de Visita")
+        st.caption("Pega los IDs de visita uno por línea, por ejemplo:\n```\n799841373\n808472905\n819900123\n```")
+        visit_ids_raw = st.text_area(
+            "IDs de visita",
+            placeholder="799841373\n808472905\n819900123",
+            height=200,
+            label_visibility="collapsed"
+        )
+
+        if st.button("💾 Asignar Seller a Visitas", type="primary", disabled=not visit_ids_raw):
+            # Parsear IDs
+            visit_ids = []
+            errors = []
+            for line in visit_ids_raw.strip().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    visit_ids.append(int(line))
+                except ValueError:
+                    errors.append(line)
+
+            if errors:
+                st.error(f"❌ Los siguientes valores no son IDs válidos: {', '.join(errors)}")
+            elif not visit_ids:
+                st.error("❌ No se encontraron IDs de visita válidos.")
+            else:
+                with st.spinner(f"Asignando seller a {len(visit_ids)} visitas..."):
+                    code, resp = patch_visits_seller(
+                        st.session_state["seller_token"], visit_ids, seller_uuid
+                    )
+                if code in [200, 201]:
+                    st.success(f"✅ Seller **{selected_label}** asignado correctamente a **{len(visit_ids)} visitas**")
+                elif code == 400:
+                    st.error(f"❌ Error de validación: {resp}")
+                elif code == 401:
+                    st.error("❌ Token inválido o sin permisos.")
+                elif code is None:
+                    st.error(f"❌ Sin conexión: {resp}")
+                else:
+                    st.error(f"❌ Error {code}: {resp}")
+
+
 # ── ROUTER ────────────────────────────────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
@@ -753,5 +863,5 @@ elif menu == "🚛 Asignación de Flotas":
     page_asignacion_flotas()
 elif menu == "🔔 Crear Webhook":
     page_crear_webhook()
-elif menu == "🔁 Reenviar Webhooks":
-    page_reenviar_webhooks()
+elif menu == "🧑‍💼 Agregar Seller a Visitas":
+    page_agregar_seller()
