@@ -20,6 +20,7 @@ with st.sidebar:
         options=[
             "🗺️ Cargar Zonas",
             "👤 Cambiar Rol de Usuario",
+            "🏷️ Tipos de Visita y Skills",
         ],
         label_visibility="collapsed"
     )
@@ -305,7 +306,185 @@ def page_cambiar_rol():
 
 
 # ─────────────────────────────────────────
+# FEATURE 3: TIPOS DE VISITA Y SKILLS
+# ─────────────────────────────────────────
+def make_template_skills():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Skills"
+    ws.append(["skill"])
+    ws.append(["Ejemplo: Manejo de carga pesada"])
+    ws.append(["Ejemplo: Refrigeración"])
+    ws.column_dimensions["A"].width = 35
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+def make_template_visit_types():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Tipos de Visita"
+    ws.append(["label", "key"])
+    ws.append(["Entrega express", "entrega_express"])
+    ws.append(["Retiro de mercancía", "retiro_mercancia"])
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 30
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+def read_excel_column(file, columns):
+    """Lee un Excel y retorna lista de dicts con las columnas indicadas."""
+    import openpyxl
+    wb = openpyxl.load_workbook(file)
+    ws = wb.active
+    headers = [str(cell.value).strip() if cell.value else "" for cell in ws[1]]
+    rows = []
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if all(v is None for v in row):
+            continue
+        entry = {}
+        for col in columns:
+            if col in headers:
+                idx = headers.index(col)
+                val = row[idx] if idx < len(row) else None
+                entry[col] = str(val).strip() if val is not None else ""
+            else:
+                entry[col] = ""
+        if any(entry[c] for c in columns):
+            rows.append(entry)
+    return rows
+
+def create_skill(skill, auth_token):
+    url = "http://api.simpliroute.com/v1/routes/skills/"
+    headers = {"Authorization": f"Token {auth_token}", "Content-Type": "application/json"}
+    try:
+        r = requests.post(url, headers=headers, json={"skill": skill}, timeout=15)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def create_visit_type(label, key, auth_token):
+    url = "http://api.simpliroute.com/v1/accounts/visit-types/"
+    headers = {"Authorization": f"Token {auth_token}", "Content-Type": "application/json"}
+    try:
+        r = requests.post(url, headers=headers, json=[{"label": label, "key": key}], timeout=15)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def show_results(results, name_key):
+    ok = sum(1 for r in results if r["code"] in [200, 201])
+    fail = len(results) - ok
+    st.markdown(f"✅ **{ok} creados correctamente** | ❌ **{fail} con error**")
+    for r in results:
+        if r["code"] in [200, 201]:
+            st.success(f"✅ {r[name_key]} — Creado correctamente")
+        elif r["code"] == 400:
+            st.warning(f"⚠️ {r[name_key]} — Ya existe o datos inválidos: {r['resp']}")
+        elif r["code"] == 401:
+            st.error(f"❌ {r[name_key]} — Token inválido o sin permisos")
+        elif r["code"] is None:
+            st.error(f"❌ {r[name_key]} — Sin conexión: {r['resp']}")
+        else:
+            st.error(f"❌ {r[name_key]} — Error {r['code']}: {r['resp']}")
+
+def page_visit_types_skills():
+    st.title("🏷️ Tipos de Visita y Skills")
+    st.markdown("Crea tipos de visita y skills de manera masiva desde un archivo Excel.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password",
+                          placeholder="Ingresa tu token aquí", key="token_vts")
+
+    # ── SKILLS ──────────────────────────────
+    st.markdown("---")
+    st.subheader("🔧 Skills")
+    st.markdown("Sube un Excel con una columna `skill` para crear habilidades en masa.")
+
+    st.download_button(
+        label="📥 Descargar plantilla Skills",
+        data=make_template_skills(),
+        file_name="plantilla_skills.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    skills_file = st.file_uploader("📂 Sube tu Excel de Skills",
+                                   type=["xlsx"], key="upload_skills")
+    if skills_file:
+        try:
+            rows = read_excel_column(skills_file, ["skill"])
+            st.success(f"✅ {len(rows)} skill(s) encontrado(s)")
+            with st.expander("Ver lista"):
+                for r in rows:
+                    st.markdown(f"- {r['skill']}")
+        except Exception as e:
+            rows = []
+            st.error(f"Error leyendo el archivo: {e}")
+
+        if rows:
+            if not token:
+                st.warning("⚠️ Ingresa tu token arriba para crear los skills.")
+            else:
+                if st.button("🚀 Crear Skills", type="primary", key="btn_skills"):
+                    results = []
+                    progress = st.progress(0)
+                    status = st.empty()
+                    for i, row in enumerate(rows):
+                        status.info(f"Creando skill: **{row['skill']}** ({i+1}/{len(rows)})")
+                        code, resp = create_skill(row["skill"], token)
+                        results.append({"skill": row["skill"], "code": code, "resp": resp})
+                        progress.progress((i + 1) / len(rows))
+                    status.empty()
+                    progress.empty()
+                    show_results(results, "skill")
+
+    # ── TIPOS DE VISITA ──────────────────────
+    st.markdown("---")
+    st.subheader("📋 Tipos de Visita")
+    st.markdown("Sube un Excel con columnas `label` y `key` para crear tipos de visita en masa.")
+
+    st.download_button(
+        label="📥 Descargar plantilla Tipos de Visita",
+        data=make_template_visit_types(),
+        file_name="plantilla_tipos_visita.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    vt_file = st.file_uploader("📂 Sube tu Excel de Tipos de Visita",
+                               type=["xlsx"], key="upload_vt")
+    if vt_file:
+        try:
+            rows_vt = read_excel_column(vt_file, ["label", "key"])
+            st.success(f"✅ {len(rows_vt)} tipo(s) de visita encontrado(s)")
+            with st.expander("Ver lista"):
+                for r in rows_vt:
+                    st.markdown(f"- **{r['label']}** → `{r['key']}`")
+        except Exception as e:
+            rows_vt = []
+            st.error(f"Error leyendo el archivo: {e}")
+
+        if rows_vt:
+            if not token:
+                st.warning("⚠️ Ingresa tu token arriba para crear los tipos de visita.")
+            else:
+                if st.button("🚀 Crear Tipos de Visita", type="primary", key="btn_vt"):
+                    results_vt = []
+                    progress_vt = st.progress(0)
+                    status_vt = st.empty()
+                    for i, row in enumerate(rows_vt):
+                        status_vt.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)})")
+                        code, resp = create_visit_type(row["label"], row["key"], token)
+                        results_vt.append({"label": row["label"], "code": code, "resp": resp})
+                        progress_vt.progress((i + 1) / len(rows_vt))
+                    status_vt.empty()
+                    progress_vt.empty()
+                    show_results(results_vt, "label")
+
+# ─────────────────────────────────────────
 # ROUTER
+
 # ─────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
