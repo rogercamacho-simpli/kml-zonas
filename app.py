@@ -4,13 +4,9 @@ import io
 import re
 import requests
 
-st.set_page_config(
-    page_title="SimpliRoute Tools",
-    page_icon="🚀",
-    layout="wide"
-)
+st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wide")
 
-# --- Sidebar ---
+# ── SIDEBAR ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 🚀 SimpliRoute Tools")
     st.markdown("---")
@@ -28,9 +24,7 @@ with st.sidebar:
     st.caption("SimpliRoute Internal Tools v1.0")
 
 
-# ─────────────────────────────────────────
-# FEATURE 1: CARGAR ZONAS
-# ─────────────────────────────────────────
+# ── HELPERS COMPARTIDOS ───────────────────────────────────────────────────────
 def decode_file(raw_bytes):
     for enc in ["utf-8", "latin-1", "cp1252"]:
         try:
@@ -95,12 +89,28 @@ def generate_excel(polygons):
     buf.seek(0)
     return buf
 
+def show_results(results, name_key):
+    ok = sum(1 for r in results if r["code"] in [200, 201])
+    st.markdown(f"✅ **{ok} creados correctamente** | ❌ **{len(results)-ok} con error**")
+    for r in results:
+        if r["code"] in [200, 201]:
+            st.success(f"✅ {r[name_key]} — Creado correctamente")
+        elif r["code"] == 400:
+            st.warning(f"⚠️ {r[name_key]} — Ya existe o datos inválidos: {r['resp']}")
+        elif r["code"] == 401:
+            st.error(f"❌ {r[name_key]} — Token inválido o sin permisos")
+        elif r["code"] is None:
+            st.error(f"❌ {r[name_key]} — Sin conexión: {r['resp']}")
+        else:
+            st.error(f"❌ {r[name_key]} — Error {r['code']}: {r['resp']}")
+
+
+# ── FEATURE 1: CARGAR ZONAS ───────────────────────────────────────────────────
 def upload_zone(name, coordinates, auth_token):
     url = "http://api.simpliroute.com/v1/zones/"
     headers = {"authorization": f"Token {auth_token}", "content-type": "application/json"}
-    payload = {"name": name, "coordinates": coordinates, "vehicles": []}
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=15)
+        r = requests.post(url, headers=headers, json={"name": name, "coordinates": coordinates, "vehicles": []}, timeout=15)
         return r.status_code, r.json()
     except Exception as e:
         return None, str(e)
@@ -108,10 +118,8 @@ def upload_zone(name, coordinates, auth_token):
 def page_cargar_zonas():
     st.title("🗺️ Cargar Zonas")
     st.markdown("Sube tu archivo KML o RTF, ingresa tu token y carga las zonas directo a SimpliRoute.")
-
     token = st.text_input("🔑 Token de SimpliRoute", type="password", placeholder="Ingresa tu token aquí")
     uploaded = st.file_uploader("📂 Sube tu archivo KML o RTF", type=["kml", "rtf", "txt"])
-
     if uploaded:
         content = uploaded.read()
         with st.spinner("Procesando archivo..."):
@@ -124,41 +132,31 @@ def page_cargar_zonas():
             except Exception as e:
                 polygons = []
                 error = str(e)
-
         if error:
             st.error(f"Error: {error}")
         elif polygons:
             st.success(f"✅ {len(polygons)} polígono(s) encontrado(s)")
-            st.subheader("Preview")
             for p in polygons:
                 with st.expander(f"📍 {p['name']} — {len(p['coords'])} puntos"):
                     st.code(coords_to_str(p["coords"][:3]) + ",...]", language=None)
-
-            excel_buf = generate_excel(polygons)
-            st.download_button(
-                label="⬇️ Descargar Excel",
-                data=excel_buf,
-                file_name="ZONES.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
+            st.download_button("⬇️ Descargar Excel", data=generate_excel(polygons),
+                               file_name="ZONES.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             st.divider()
             st.subheader("📡 Cargar zonas a SimpliRoute")
             if not token:
-                st.warning("⚠️ Ingresa tu token de SimpliRoute arriba para poder cargar las zonas.")
+                st.warning("⚠️ Ingresa tu token arriba para cargar las zonas.")
             else:
                 if st.button("🚀 Cargar zonas a SimpliRoute", type="primary"):
                     results = []
-                    progress = st.progress(0)
-                    status_box = st.empty()
+                    prog = st.progress(0)
+                    status = st.empty()
                     for i, p in enumerate(polygons):
-                        status_box.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
+                        status.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
                         code, resp = upload_zone(p["name"], coords_to_str(p["coords"]), token)
                         results.append({"name": p["name"], "code": code, "resp": resp})
-                        progress.progress((i + 1) / len(polygons))
-                    status_box.empty()
-                    progress.empty()
-
+                        prog.progress((i+1)/len(polygons))
+                    status.empty(); prog.empty()
                     ok = sum(1 for r in results if r["code"] in [200, 201])
                     st.markdown(f"✅ **{ok} zonas cargadas** | ❌ **{len(results)-ok} con error**")
                     for r in results:
@@ -176,22 +174,12 @@ def page_cargar_zonas():
             st.warning("No se encontraron polígonos en el archivo.")
 
 
-# ─────────────────────────────────────────
-# FEATURE 2: CAMBIAR ROL DE USUARIO
-# ─────────────────────────────────────────
+# ── FEATURE 2: CAMBIAR ROL DE USUARIO ────────────────────────────────────────
 ROLES = {
-    "Administrador": "is_admin",
-    "Conductor": "is_driver",
-    "Co-conductor": "is_codriver",
-    "Router Jr": "is_router_jr",
-    "Monitor": "is_monitor",
-    "Coordinador": "is_coordinator",
-    "Router": "is_router",
-    "Staff": "is_staff",
-    "Seller Viewer": "is_seller_viewer",
-    "Seller": "is_seller",
+    "Administrador": "is_admin", "Conductor": "is_driver", "Co-conductor": "is_codriver",
+    "Router Jr": "is_router_jr", "Monitor": "is_monitor", "Coordinador": "is_coordinator",
+    "Router": "is_router", "Staff": "is_staff", "Seller Viewer": "is_seller_viewer", "Seller": "is_seller",
 }
-
 ALL_ROLE_KEYS = list(ROLES.values()) + ["is_owner"]
 
 def get_current_role(user):
@@ -214,7 +202,6 @@ def get_user(user_id, auth_token):
 def update_user_role(user_id, new_role_key, auth_token, user_data={}):
     url = f"http://api.simpliroute.com/v1/accounts/users/{user_id}/"
     headers = {"Authorization": f"Token {auth_token}", "Content-Type": "application/json"}
-    # Solo enviar los campos de rol, todos en False excepto el nuevo
     payload = {key: (key == new_role_key) for key in ALL_ROLE_KEYS}
     payload["username"] = user_data.get("username", "")
     payload["name"] = user_data.get("name", "")
@@ -227,17 +214,14 @@ def update_user_role(user_id, new_role_key, auth_token, user_data={}):
 def page_cambiar_rol():
     st.title("👤 Cambiar Rol de Usuario")
     st.markdown("Consulta un usuario por ID y cambia su rol en la plataforma.")
-
     col1, col2 = st.columns(2)
     with col1:
         token = st.text_input("🔑 Token de SimpliRoute", type="password", placeholder="Ingresa tu token aquí")
     with col2:
         user_id = st.text_input("🆔 ID del Usuario", placeholder="Ej: 524614")
-
     if st.button("🔍 Consultar usuario", type="primary", disabled=not (token and user_id)):
         with st.spinner("Consultando usuario..."):
             code, resp = get_user(user_id.strip(), token.strip())
-
         if code == 200:
             st.session_state["user_data"] = resp
             st.session_state["user_token"] = token.strip()
@@ -253,12 +237,9 @@ def page_cambiar_rol():
         else:
             st.error(f"❌ Error {code}: {resp}")
             st.session_state.pop("user_data", None)
-
-
     if "user_data" in st.session_state:
         user = st.session_state["user_data"]
         current_label, current_key = get_current_role(user)
-
         st.divider()
         st.subheader("Información del usuario")
         col1, col2, col3 = st.columns(3)
@@ -266,29 +247,19 @@ def page_cambiar_rol():
         col2.markdown(f"**Username**<br>{user.get('username', '—')}", unsafe_allow_html=True)
         col3.markdown(f"**Rol actual**<br>{current_label}", unsafe_allow_html=True)
         st.caption(f"📧 {user.get('email', '—')} · Estado: {user.get('status', '—')}")
-
         st.divider()
-
         if current_key == "is_owner":
             st.warning("⚠️ Este usuario es **Owner** de la cuenta. Su rol no puede ser modificado.")
         else:
             st.subheader("Cambiar rol")
-            # Opciones de rol excluyendo el actual y owner
             opciones = [label for label, key in ROLES.items() if key != current_key]
             nuevo_rol_label = st.selectbox("Selecciona el nuevo rol:", opciones)
             nuevo_rol_key = ROLES[nuevo_rol_label]
-
             if st.button(f"💾 Cambiar rol a {nuevo_rol_label}", type="primary"):
                 with st.spinner("Actualizando rol..."):
-                    code, resp = update_user_role(
-                        user["id"],
-                        nuevo_rol_key,
-                        st.session_state["user_token"],
-                        user
-                    )
+                    code, resp = update_user_role(user["id"], nuevo_rol_key, st.session_state["user_token"], user)
                 if code == 200:
                     st.success(f"✅ Rol actualizado correctamente a **{nuevo_rol_label}**")
-                    # Recargar datos actualizados del usuario
                     _, fresh = get_user(user["id"], st.session_state["user_token"])
                     if isinstance(fresh, dict) and "id" in fresh:
                         st.session_state["user_data"] = fresh
@@ -305,20 +276,16 @@ def page_cambiar_rol():
                     st.error(f"❌ Error {code}: {resp}")
 
 
-# ─────────────────────────────────────────
-# FEATURE 3: TIPOS DE VISITA Y SKILLS
-# ─────────────────────────────────────────
+# ── FEATURE 3: TIPOS DE VISITA Y SKILLS ──────────────────────────────────────
 def make_template_skills():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Skills"
     ws.append(["skill"])
-    ws.append(["Ejemplo: Manejo de carga pesada"])
-    ws.append(["Ejemplo: Refrigeración"])
+    ws.append(["Manejo de carga pesada"])
+    ws.append(["Refrigeración"])
     ws.column_dimensions["A"].width = 35
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf
 
 def make_template_visit_types():
@@ -330,14 +297,10 @@ def make_template_visit_types():
     ws.append(["Retiro de mercancía", "retiro_mercancia"])
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 30
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return buf
 
 def read_excel_column(file, columns):
-    """Lee un Excel y retorna lista de dicts con las columnas indicadas."""
-    import openpyxl
     wb = openpyxl.load_workbook(file)
     ws = wb.active
     headers = [str(cell.value).strip() if cell.value else "" for cell in ws[1]]
@@ -347,12 +310,9 @@ def read_excel_column(file, columns):
             continue
         entry = {}
         for col in columns:
-            if col in headers:
-                idx = headers.index(col)
-                val = row[idx] if idx < len(row) else None
-                entry[col] = str(val).strip() if val is not None else ""
-            else:
-                entry[col] = ""
+            idx = headers.index(col) if col in headers else -1
+            val = row[idx] if 0 <= idx < len(row) else None
+            entry[col] = str(val).strip() if val is not None else ""
         if any(entry[c] for c in columns):
             rows.append(entry)
     return rows
@@ -375,43 +335,19 @@ def create_visit_type(label, key, auth_token):
     except Exception as e:
         return None, str(e)
 
-def show_results(results, name_key):
-    ok = sum(1 for r in results if r["code"] in [200, 201])
-    fail = len(results) - ok
-    st.markdown(f"✅ **{ok} creados correctamente** | ❌ **{fail} con error**")
-    for r in results:
-        if r["code"] in [200, 201]:
-            st.success(f"✅ {r[name_key]} — Creado correctamente")
-        elif r["code"] == 400:
-            st.warning(f"⚠️ {r[name_key]} — Ya existe o datos inválidos: {r['resp']}")
-        elif r["code"] == 401:
-            st.error(f"❌ {r[name_key]} — Token inválido o sin permisos")
-        elif r["code"] is None:
-            st.error(f"❌ {r[name_key]} — Sin conexión: {r['resp']}")
-        else:
-            st.error(f"❌ {r[name_key]} — Error {r['code']}: {r['resp']}")
-
 def page_visit_types_skills():
     st.title("🏷️ Tipos de Visita y Skills")
     st.markdown("Crea tipos de visita y skills de manera masiva desde un archivo Excel.")
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", placeholder="Ingresa tu token aquí", key="token_vts")
 
-    token = st.text_input("🔑 Token de SimpliRoute", type="password",
-                          placeholder="Ingresa tu token aquí", key="token_vts")
-
-    # ── SKILLS ──────────────────────────────
+    # ── Skills
     st.markdown("---")
     st.subheader("🔧 Skills")
     st.markdown("Sube un Excel con una columna `skill` para crear habilidades en masa.")
-
-    st.download_button(
-        label="📥 Descargar plantilla Skills",
-        data=make_template_skills(),
-        file_name="plantilla_skills.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    skills_file = st.file_uploader("📂 Sube tu Excel de Skills",
-                                   type=["xlsx"], key="upload_skills")
+    st.download_button("📥 Descargar plantilla Skills", data=make_template_skills(),
+                       file_name="plantilla_skills.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    skills_file = st.file_uploader("📂 Sube tu Excel de Skills", type=["xlsx"], key="upload_skills")
     if skills_file:
         try:
             rows = read_excel_column(skills_file, ["skill"])
@@ -422,38 +358,29 @@ def page_visit_types_skills():
         except Exception as e:
             rows = []
             st.error(f"Error leyendo el archivo: {e}")
-
         if rows:
             if not token:
                 st.warning("⚠️ Ingresa tu token arriba para crear los skills.")
             else:
                 if st.button("🚀 Crear Skills", type="primary", key="btn_skills"):
                     results = []
-                    progress = st.progress(0)
-                    status = st.empty()
+                    prog = st.progress(0); status = st.empty()
                     for i, row in enumerate(rows):
                         status.info(f"Creando skill: **{row['skill']}** ({i+1}/{len(rows)})")
                         code, resp = create_skill(row["skill"], token)
                         results.append({"skill": row["skill"], "code": code, "resp": resp})
-                        progress.progress((i + 1) / len(rows))
-                    status.empty()
-                    progress.empty()
+                        prog.progress((i+1)/len(rows))
+                    status.empty(); prog.empty()
                     show_results(results, "skill")
 
-    # ── TIPOS DE VISITA ──────────────────────
+    # ── Tipos de Visita
     st.markdown("---")
     st.subheader("📋 Tipos de Visita")
     st.markdown("Sube un Excel con columnas `label` y `key` para crear tipos de visita en masa.")
-
-    st.download_button(
-        label="📥 Descargar plantilla Tipos de Visita",
-        data=make_template_visit_types(),
-        file_name="plantilla_tipos_visita.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-
-    vt_file = st.file_uploader("📂 Sube tu Excel de Tipos de Visita",
-                               type=["xlsx"], key="upload_vt")
+    st.download_button("📥 Descargar plantilla Tipos de Visita", data=make_template_visit_types(),
+                       file_name="plantilla_tipos_visita.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    vt_file = st.file_uploader("📂 Sube tu Excel de Tipos de Visita", type=["xlsx"], key="upload_vt")
     if vt_file:
         try:
             rows_vt = read_excel_column(vt_file, ["label", "key"])
@@ -464,29 +391,26 @@ def page_visit_types_skills():
         except Exception as e:
             rows_vt = []
             st.error(f"Error leyendo el archivo: {e}")
-
         if rows_vt:
             if not token:
                 st.warning("⚠️ Ingresa tu token arriba para crear los tipos de visita.")
             else:
                 if st.button("🚀 Crear Tipos de Visita", type="primary", key="btn_vt"):
                     results_vt = []
-                    progress_vt = st.progress(0)
-                    status_vt = st.empty()
+                    prog = st.progress(0); status = st.empty()
                     for i, row in enumerate(rows_vt):
-                        status_vt.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)})")
+                        status.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)})")
                         code, resp = create_visit_type(row["label"], row["key"], token)
                         results_vt.append({"label": row["label"], "code": code, "resp": resp})
-                        progress_vt.progress((i + 1) / len(rows_vt))
-                    status_vt.empty()
-                    progress_vt.empty()
+                        prog.progress((i+1)/len(rows_vt))
+                    status.empty(); prog.empty()
                     show_results(results_vt, "label")
 
-# ─────────────────────────────────────────
-# ROUTER
 
-# ─────────────────────────────────────────
+# ── ROUTER ────────────────────────────────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
 elif menu == "👤 Cambiar Rol de Usuario":
     page_cambiar_rol()
+elif menu == "🏷️ Tipos de Visita y Skills":
+    page_visit_types_skills()
