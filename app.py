@@ -16,7 +16,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🛠️ Herramientas")
     menu = st.radio(
-        label="",
+        label="Navegación",
         options=[
             "🗺️ Cargar Zonas",
             "👤 Cambiar Rol de Usuario",
