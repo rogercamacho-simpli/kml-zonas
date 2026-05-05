@@ -13,6 +13,9 @@ with st.sidebar:
     st.markdown("## 🚀 SimpliRoute Tools")
     st.markdown("---")
 
+    if "active_section" not in st.session_state:
+        st.session_state["active_section"] = "core"
+
     st.markdown("### 🛠️ SimpliRoute Core")
     menu = st.radio(
         label="Navegación Core",
@@ -27,7 +30,9 @@ with st.sidebar:
             "🏷️ Tipos de Visita y Skills",
         ],
         label_visibility="collapsed",
-        key="menu_core"
+        key="menu_core",
+        index=0 if st.session_state["active_section"] == "core" else None,
+        on_change=lambda: st.session_state.update({"active_section": "core"})
     )
 
     st.markdown("---")
@@ -39,30 +44,15 @@ with st.sidebar:
             "🚚 Transportistas",
         ],
         label_visibility="collapsed",
-        key="menu_tms"
+        key="menu_tms",
+        index=0 if st.session_state["active_section"] == "tms" else None,
+        on_change=lambda: st.session_state.update({"active_section": "tms"})
     )
 
     st.markdown("---")
     st.caption("SimpliRoute Internal Tools v1.0")
 
-# Determinar cuál sección está activa basado en cuál cambió último
-if "last_menu" not in st.session_state:
-    st.session_state["last_menu"] = "core"
-
-# Detectar cambio de sección
-if "prev_core" not in st.session_state:
-    st.session_state["prev_core"] = menu
-if "prev_tms" not in st.session_state:
-    st.session_state["prev_tms"] = menu_tms
-
-if menu != st.session_state["prev_core"]:
-    st.session_state["last_menu"] = "core"
-    st.session_state["prev_core"] = menu
-elif menu_tms != st.session_state["prev_tms"]:
-    st.session_state["last_menu"] = "tms"
-    st.session_state["prev_tms"] = menu_tms
-
-active_section = st.session_state["last_menu"]
+active_section = st.session_state["active_section"]
 
 
 # ── HELPERS COMPARTIDOS ───────────────────────────────────────────────────────
