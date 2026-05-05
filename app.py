@@ -14,12 +14,12 @@ with st.sidebar:
     menu = st.radio(
         label="Navegación",
         options=[
+            "🚛 Asignación de Flotas",
             "🗺️ Cargar Zonas",
             "👤 Cambiar Rol de Usuario",
-            "🏷️ Tipos de Visita y Skills",
-            "🚛 Asignación de Flotas",
             "🔔 Crear Webhook",
             "🔁 Reenviar Webhooks",
+            "🏷️ Tipos de Visita y Skills",
         ],
         label_visibility="collapsed"
     )
