@@ -17,6 +17,7 @@ with st.sidebar:
             "🗺️ Cargar Zonas",
             "👤 Cambiar Rol de Usuario",
             "🏷️ Tipos de Visita y Skills",
+            "🚛 Asignación de Flotas",
         ],
         label_visibility="collapsed"
     )
@@ -407,6 +408,177 @@ def page_visit_types_skills():
                     show_results(results_vt, "label")
 
 
+# ── FEATURE 4: ASIGNACIÓN DE FLOTAS ──────────────────────────────────────────
+def make_template_flotas():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Flotas"
+    ws.append(["Nombre de flota", "Vehículos", "Usuarios"])
+    ws.append(["Flota Norte", "MC4327,QC4380,MC7959", "juan.perez,ana.lopez"])
+    ws.append(["Flota Sur", "DC8761,MA7532", "carlos.gomez,maria.ruiz"])
+    ws.column_dimensions["A"].width = 25
+    ws.column_dimensions["B"].width = 40
+    ws.column_dimensions["C"].width = 40
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    return buf
+
+def get_fleets(auth_token):
+    url = "http://api.simpliroute.com/v1/fleets/"
+    headers = {"Authorization": f"Token {auth_token}", "accept": "application/json"}
+    try:
+        r = requests.get(url, headers=headers, timeout=300)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def get_vehicles(auth_token):
+    url = "http://api.simpliroute.com/v1/routes/vehicles/"
+    headers = {"Authorization": f"Token {auth_token}", "Content-Type": "application/json"}
+    try:
+        r = requests.get(url, headers=headers, timeout=300)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def get_users_list(auth_token):
+    url = "http://api.simpliroute.com/v1/accounts/users/"
+    headers = {"Authorization": f"Token {auth_token}", "accept": "application/json"}
+    try:
+        r = requests.get(url, headers=headers, timeout=300)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def update_fleet(fleet_id, fleet_name, vehicle_ids, user_ids, auth_token):
+    url = f"http://api.simpliroute.com/v1/fleets/{fleet_id}/"
+    headers = {"Authorization": f"Token {auth_token}", "Content-Type": "application/json"}
+    payload = {
+        "id": fleet_id,
+        "name": fleet_name,
+        "vehicles": vehicle_ids,
+        "users": user_ids
+    }
+    try:
+        r = requests.put(url, headers=headers, json=payload, timeout=300)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def page_asignacion_flotas():
+    st.title("🚛 Asignación de Flotas")
+    st.markdown("Sube un Excel con la asignación de vehículos y usuarios por flota para actualizarlas masivamente.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password",
+                          placeholder="Ingresa tu token aquí", key="token_flotas")
+
+    st.download_button(
+        label="📥 Descargar plantilla Flotas",
+        data=make_template_flotas(),
+        file_name="plantilla_flotas.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    fleet_file = st.file_uploader("📂 Sube tu Excel de Flotas", type=["xlsx"], key="upload_flotas")
+
+    if fleet_file and token:
+        if st.button("🚀 Procesar y actualizar flotas", type="primary", key="btn_flotas"):
+
+            # Leer Excel
+            try:
+                rows = read_excel_column(fleet_file, ["Nombre de flota", "Vehículos", "Usuarios"])
+                if not rows:
+                    st.error("❌ No se encontraron filas en el Excel.")
+                    return
+            except Exception as e:
+                st.error(f"❌ Error leyendo el Excel: {e}")
+                return
+
+            # Consultar flotas, vehículos y usuarios
+            with st.spinner("⏳ Consultando flotas, vehículos y usuarios (puede tardar varios minutos)..."):
+                code_f, fleets = get_fleets(token)
+                code_v, vehicles = get_vehicles(token)
+                code_u, users = get_users_list(token)
+
+            if code_f != 200:
+                st.error(f"❌ Error consultando flotas: {code_f} — {fleets}")
+                return
+            if code_v != 200:
+                st.error(f"❌ Error consultando vehículos: {code_v} — {vehicles}")
+                return
+            if code_u != 200:
+                st.error(f"❌ Error consultando usuarios: {code_u} — {users}")
+                return
+
+            # Crear mapas nombre → id
+            fleet_map = {f["name"].strip().lower(): f for f in fleets}
+            vehicle_map = {v["name"].strip().lower(): v["id"] for v in vehicles if v.get("name")}
+            # Usuarios: mapear por username y email
+            user_map = {}
+            for u in users:
+                if u.get("username"):
+                    user_map[u["username"].strip().lower()] = u["id"]
+                if u.get("email"):
+                    user_map[u["email"].strip().lower()] = u["id"]
+
+            st.success(f"✅ Consultados: {len(fleets)} flotas · {len(vehicles)} vehículos · {len(users)} usuarios")
+            st.divider()
+            st.subheader("Resultados")
+
+            for row in rows:
+                fleet_name = row["Nombre de flota"].strip()
+                fleet_key = fleet_name.lower()
+
+                # Buscar flota
+                if fleet_key not in fleet_map:
+                    st.error(f"❌ **{fleet_name}** — Flota no encontrada en la cuenta")
+                    continue
+
+                fleet = fleet_map[fleet_key]
+                fleet_id = fleet["id"]
+
+                # Resolver vehículos
+                vehicle_ids = []
+                vehicle_errors = []
+                for v_name in [v.strip() for v in row["Vehículos"].split(",") if v.strip()]:
+                    vid = vehicle_map.get(v_name.lower())
+                    if vid:
+                        vehicle_ids.append(vid)
+                    else:
+                        vehicle_errors.append(v_name)
+
+                # Resolver usuarios
+                user_ids = []
+                user_errors = []
+                for u_name in [u.strip() for u in row["Usuarios"].split(",") if u.strip()]:
+                    uid = user_map.get(u_name.lower())
+                    if uid:
+                        user_ids.append(uid)
+                    else:
+                        user_errors.append(u_name)
+
+                # Advertencias de no encontrados
+                if vehicle_errors:
+                    st.warning(f"⚠️ **{fleet_name}** — Vehículos no encontrados: {', '.join(vehicle_errors)}")
+                if user_errors:
+                    st.warning(f"⚠️ **{fleet_name}** — Usuarios no encontrados: {', '.join(user_errors)}")
+
+                # Actualizar flota
+                code, resp = update_fleet(fleet_id, fleet_name, vehicle_ids, user_ids, token)
+                if code == 200:
+                    st.success(f"✅ **{fleet_name}** — Actualizada correctamente ({len(vehicle_ids)} vehículos · {len(user_ids)} usuarios)")
+                elif code == 400:
+                    st.error(f"❌ **{fleet_name}** — Error de validación: {resp}")
+                elif code == 401:
+                    st.error(f"❌ **{fleet_name}** — Token inválido o sin permisos")
+                elif code is None:
+                    st.error(f"❌ **{fleet_name}** — Sin conexión: {resp}")
+                else:
+                    st.error(f"❌ **{fleet_name}** — Error {code}: {resp}")
+
+    elif fleet_file and not token:
+        st.warning("⚠️ Ingresa tu token arriba para continuar.")
+
+
 # ── ROUTER ────────────────────────────────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
@@ -414,3 +586,5 @@ elif menu == "👤 Cambiar Rol de Usuario":
     page_cambiar_rol()
 elif menu == "🏷️ Tipos de Visita y Skills":
     page_visit_types_skills()
+elif menu == "🚛 Asignación de Flotas":
+    page_asignacion_flotas()
