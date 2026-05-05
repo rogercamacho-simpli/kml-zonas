@@ -18,6 +18,7 @@ with st.sidebar:
             "👤 Cambiar Rol de Usuario",
             "🏷️ Tipos de Visita y Skills",
             "🚛 Asignación de Flotas",
+            "🔔 Crear Webhook",
         ],
         label_visibility="collapsed"
     )
@@ -119,6 +120,7 @@ def upload_zone(name, coordinates, auth_token):
 def page_cargar_zonas():
     st.title("🗺️ Cargar Zonas")
     st.markdown("Sube tu archivo KML o RTF, ingresa tu token y carga las zonas directo a SimpliRoute.")
+    st.info("ℹ️ Cada fila del Excel representa una edición independiente de flota. Si una misma flota aparece en dos filas, la segunda edición sobreescribirá a la primera.")
     token = st.text_input("🔑 Token de SimpliRoute", type="password", placeholder="Ingresa tu token aquí")
     uploaded = st.file_uploader("📂 Sube tu archivo KML o RTF", type=["kml", "rtf", "txt"])
     if uploaded:
@@ -579,6 +581,86 @@ def page_asignacion_flotas():
         st.warning("⚠️ Ingresa tu token arriba para continuar.")
 
 
+# ── FEATURE 5: CREAR WEBHOOK ─────────────────────────────────────────────────
+WEBHOOK_EVENTS = {
+    "Plan creado": "plan_created",
+    "Plan editado": "plan_edited",
+    "Ruta creada": "route_created",
+    "Ruta editada": "route_edited",
+    "Ruta iniciada": "route_started",
+    "Ruta finalizada": "route_finished",
+    "En camino": "on_its_way",
+    "Checkout": "visit_checkout",
+    "Checkout detallado": "visit_checkout_detailed",
+}
+
+def create_webhook(token, webhook_key, url, headers_payload):
+    api_url = "http://api.simpliroute.com/v1/addons/webhooks/"
+    headers = {"Authorization": f"Token {token}", "Content-Type": "application/json"}
+    payload = {"webhook": webhook_key, "url": url, "headers": headers_payload}
+    try:
+        r = requests.post(api_url, headers=headers, json=payload, timeout=30)
+        return r.status_code, r.json()
+    except Exception as e:
+        return None, str(e)
+
+def page_crear_webhook():
+    st.title("🔔 Crear Webhook")
+    st.markdown("Configura un webhook para recibir notificaciones de eventos de SimpliRoute.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password",
+                          placeholder="Ingresa tu token aquí", key="token_webhook")
+
+    url = st.text_input("🌐 URL de destino", placeholder="https://tu-servidor.com/webhook")
+
+    evento_label = st.selectbox("📋 Tipo de evento", options=list(WEBHOOK_EVENTS.keys()))
+    evento_key = WEBHOOK_EVENTS[evento_label]
+
+    st.markdown("**🔧 Headers**")
+    custom_header = st.checkbox("Usar header personalizado")
+
+    if custom_header:
+        st.caption("Pega aquí el JSON del header personalizado. El Content-Type se incluye por defecto.")
+        header_json_str = st.text_area(
+            "Header personalizado (JSON)",
+            value='{\n    "Content-Type": "application/json",\n    "X-Custom-Header": "valor"\n}',
+            height=150,
+            label_visibility="collapsed"
+        )
+        try:
+            import json
+            headers_payload = json.loads(header_json_str)
+        except Exception:
+            st.error("❌ El JSON del header no es válido. Verifica el formato.")
+            headers_payload = None
+    else:
+        headers_payload = {"Content-Type": "application/json"}
+        st.code('{"Content-Type": "application/json"}', language="json")
+
+    st.divider()
+
+    if st.button("🚀 Crear Webhook", type="primary", disabled=not (token and url)):
+        if not url.startswith("http"):
+            st.error("❌ La URL debe comenzar con http:// o https://")
+            return
+        if custom_header and headers_payload is None:
+            st.error("❌ Corrige el JSON del header antes de continuar.")
+            return
+        with st.spinner("Creando webhook..."):
+            code, resp = create_webhook(token, evento_key, url, headers_payload)
+        if code in [200, 201]:
+            st.success(f"✅ Webhook **{evento_label}** creado correctamente")
+            st.json(resp)
+        elif code == 400:
+            st.error(f"❌ Error de validación: {resp}")
+        elif code == 401:
+            st.error("❌ Token inválido o sin permisos.")
+        elif code is None:
+            st.error(f"❌ Sin conexión: {resp}")
+        else:
+            st.error(f"❌ Error {code}: {resp}")
+
+
 # ── ROUTER ────────────────────────────────────────────────────────────────────
 if menu == "🗺️ Cargar Zonas":
     page_cargar_zonas()
@@ -588,3 +670,5 @@ elif menu == "🏷️ Tipos de Visita y Skills":
     page_visit_types_skills()
 elif menu == "🚛 Asignación de Flotas":
     page_asignacion_flotas()
+elif menu == "🔔 Crear Webhook":
+    page_crear_webhook()
