@@ -172,8 +172,12 @@ def page_agregar_seller():
             except Exception as e:
                 code, resp = None, str(e)
         if code == 200:
-            st.session_state["sellers"] = resp; st.session_state["seller_token"] = token
-            st.success(f"✅ {len(resp)} seller(s)")
+            if not resp:
+                st.warning("⚠️ Esta cuenta no tiene sellers configurados.")
+                st.session_state.pop("sellers", None)
+            else:
+                st.session_state["sellers"] = resp; st.session_state["seller_token"] = token
+                st.success(f"✅ {len(resp)} seller(s)")
         else:
             st.error(f"❌ Error {code}"); st.session_state.pop("sellers", None)
 
