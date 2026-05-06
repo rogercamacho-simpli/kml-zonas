@@ -602,9 +602,9 @@ def page_iniciar_cerrar_rutas():
     evento = st.selectbox("📋 Tipo de evento", ["Iniciar ruta", "Finalizar ruta"])
     event_type = "ROUTE_STARTED" if evento == "Iniciar ruta" else "ROUTE_FINISHED"
 
-    today = date.today().strftime("%Y-%m-%d")
+    selected_date = st.date_input("📅 Fecha", value=date.today())
     hora = "12:00:00.000Z" if event_type == "ROUTE_STARTED" else "22:00:00.000Z"
-    date_time = f"{today}T{hora}"
+    date_time = f"{selected_date.strftime('%Y-%m-%d')}T{hora}"
     st.caption(f"📅 Fecha y hora que se usará: **{date_time}**")
 
     st.divider()
