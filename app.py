@@ -16,6 +16,7 @@ CORE_OPTIONS = [
     "👤 Cambiar Rol de Usuario",
     "🔔 Crear Webhook",
     "🔓 Desbloqueo de Contraseña",
+    "🚦 Iniciar / Cerrar Rutas",
     "🔁 Reenviar Webhooks",
     "🏷️ Tipos de Visita y Skills",
 ]
@@ -591,7 +592,87 @@ def page_visit_types_skills():
             status.empty(); prog.empty(); show_results(results, "label")
 
 
-# ── TMS: TIPOS DE DOCUMENTO ───────────────────────────────────────────────────
+# ── FEATURE: INICIAR / CERRAR RUTAS ──────────────────────────────────────────
+def page_iniciar_cerrar_rutas():
+    st.title("🚦 Iniciar / Cerrar Rutas")
+    st.markdown("Registra el evento de inicio o cierre para una lista de rutas.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_routes")
+
+    evento = st.selectbox("📋 Tipo de evento", ["Iniciar ruta", "Finalizar ruta"])
+    event_type = "ROUTE_STARTED" if evento == "Iniciar ruta" else "ROUTE_FINISHED"
+
+    today = date.today().strftime("%Y-%m-%d")
+    hora = "12:00:00.000Z" if event_type == "ROUTE_STARTED" else "22:00:00.000Z"
+    date_time = f"{today}T{hora}"
+    st.caption(f"📅 Fecha y hora que se usará: **{date_time}**")
+
+    st.divider()
+    st.caption("Pega los IDs de ruta uno por línea, por ejemplo:\n```\n637f11a2-a1a6-4609-8c23-83e8c76dccbf\nb9055313-a698-4af9-a676-fe63ca175ace\n```")
+    route_ids_raw = st.text_area("IDs de ruta", placeholder="637f11a2-a1a6-4609-8c23-83e8c76dccbf\nb9055313-...",
+                                 height=200, label_visibility="collapsed")
+
+    if st.button(f"🚀 {evento}", type="primary", disabled=not (token and route_ids_raw)):
+        route_ids = [l.strip() for l in route_ids_raw.strip().splitlines() if l.strip()]
+        if not route_ids:
+            st.error("❌ No se encontraron IDs válidos."); return
+
+        prog = st.progress(0); status = st.empty()
+
+        for i, route_id in enumerate(route_ids):
+            status.info(f"Procesando: **{route_id}** ({i+1}/{len(route_ids)})")
+
+            # GET info de la ruta
+            try:
+                r = requests.get(f"http://api.simpliroute.com/v1/routes/routes/{route_id}/",
+                                 headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
+                                 timeout=30)
+                code_get, route_data = r.status_code, r.json()
+            except Exception as e:
+                st.error(f"❌ **{route_id}** — Error consultando ruta: {e}")
+                prog.progress((i+1)/len(route_ids)); continue
+
+            if code_get != 200:
+                st.error(f"❌ **{route_id}** — Error {code_get} al consultar ruta")
+                prog.progress((i+1)/len(route_ids)); continue
+
+            # Seleccionar lat/lng según el tipo de evento
+            if event_type == "ROUTE_STARTED":
+                lat = route_data.get("location_start_latitude")
+                lng = route_data.get("location_start_longitude")
+            else:
+                lat = route_data.get("location_end_latitude")
+                lng = route_data.get("location_end_longitude")
+
+            if not lat or not lng:
+                st.warning(f"⚠️ **{route_id}** — Sin coordenadas disponibles para este evento")
+                prog.progress((i+1)/len(route_ids)); continue
+
+            # POST evento
+            try:
+                r2 = requests.post("http://api.simpliroute.com/v1/events/register/",
+                                   headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
+                                   json={"date_time": date_time, "latitude": float(lat),
+                                         "longitude": float(lng), "route_id": route_id, "type": event_type},
+                                   timeout=30)
+                code_post = r2.status_code
+            except Exception as e:
+                st.error(f"❌ **{route_id}** — Error registrando evento: {e}")
+                prog.progress((i+1)/len(route_ids)); continue
+
+            if code_post in [200, 201]:
+                st.success(f"✅ **{route_id}** — {evento} registrado correctamente")
+            elif code_post == 401:
+                st.error(f"❌ **{route_id}** — Token inválido")
+            else:
+                st.error(f"❌ **{route_id}** — Error {code_post}")
+
+            prog.progress((i+1)/len(route_ids))
+
+        status.empty(); prog.empty()
+
+
+
 def page_tms_document_types():
     st.title("📄 Tipos de Documento TMS")
     COUNTRY_OPTIONS = ["PE","CL","MX","CO","AR","EC","BO","UY","PY","VE"]
@@ -672,6 +753,7 @@ elif selected == "🗺️ Cargar Zonas": page_cargar_zonas()
 elif selected == "👤 Cambiar Rol de Usuario": page_cambiar_rol()
 elif selected == "🔔 Crear Webhook": page_crear_webhook()
 elif selected == "🔓 Desbloqueo de Contraseña": page_desbloqueo()
+elif selected == "🚦 Iniciar / Cerrar Rutas": page_iniciar_cerrar_rutas()
 elif selected == "🔁 Reenviar Webhooks": page_reenviar_webhooks()
 elif selected == "🏷️ Tipos de Visita y Skills": page_visit_types_skills()
 elif selected == "📄 Tipos de Documento": page_tms_document_types()
