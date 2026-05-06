@@ -114,7 +114,11 @@ def read_excel_column(file, columns):
     for row in ws.iter_rows(min_row=2, values_only=True):
         if all(v is None for v in row):
             continue
-        entry = {col: str(row[headers.index(col)] if col in headers and headers.index(col) < len(row) else "").strip() for col in columns}
+        entry = {}
+        for col in columns:
+            idx = headers.index(col) if col in headers else -1
+            val = row[idx] if 0 <= idx < len(row) else None
+            entry[col] = str(val).strip() if val is not None else ""
         if any(entry[c] for c in columns):
             rows.append(entry)
     return rows
@@ -163,16 +167,15 @@ def page_agregar_seller():
         with st.spinner("Consultando..."):
             try:
                 r = requests.get("http://api.simpliroute.com/v1/sellers/",
-                                 headers={"Authorization": f"Token {token}", "Content-Type": "application/json"}, timeout=60)
+                                 headers={"Authorization": f"Token {token}"}, timeout=60)
                 code, resp = r.status_code, r.json()
             except Exception as e:
                 code, resp = None, str(e)
         if code == 200:
             st.session_state["sellers"] = resp; st.session_state["seller_token"] = token
-            st.success(f"✅ {len(resp)} seller(s) encontrado(s)")
+            st.success(f"✅ {len(resp)} seller(s)")
         else:
-            st.error(f"❌ Error {code}: {resp}")
-            st.session_state.pop("sellers", None)
+            st.error(f"❌ Error {code}"); st.session_state.pop("sellers", None)
 
     if "sellers" in st.session_state:
         sellers = st.session_state["sellers"]
@@ -200,7 +203,7 @@ def page_agregar_seller():
                                        headers={"Authorization": f"Token {st.session_state['seller_token']}", "Content-Type": "application/json"},
                                        json=[{"id": vid, "seller": seller_uuid} for vid in ids], timeout=120)
                     code = r.status_code
-                except Exception as e:
+                except:
                     code = None
             if code in [200,201]: st.success(f"✅ Seller asignado a {len(ids)} visitas")
             else: st.error(f"❌ Error {code}")
@@ -228,13 +231,12 @@ def page_asignacion_flotas():
                 st.error(f"❌ Error leyendo Excel: {e}"); return
             with st.spinner("⏳ Consultando flotas, vehículos y usuarios..."):
                 try:
-                    rf = requests.get("http://api.simpliroute.com/v1/fleets/", headers={"Authorization":f"Token {token}","accept":"application/json"}, timeout=300)
+                    rf = requests.get("http://api.simpliroute.com/v1/fleets/", headers={"Authorization":f"Token {token}"}, timeout=300)
                     rv = requests.get("http://api.simpliroute.com/v1/routes/vehicles/", headers={"Authorization":f"Token {token}"}, timeout=300)
-                    ru = get_users_list(token)
+                    code_u, users = get_users_list(token)
                     fleets, vehicles = rf.json(), rv.json()
-                    code_u, users = ru
                 except Exception as e:
-                    st.error(f"❌ Error consultando API: {e}"); return
+                    st.error(f"❌ Error: {e}"); return
             fleet_map = {f["name"].strip().lower(): f for f in fleets}
             vehicle_map = {v["name"].strip().lower(): v["id"] for v in vehicles if v.get("name")}
             user_map = {}
@@ -263,7 +265,7 @@ def page_asignacion_flotas():
                                      headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
                                      json={"id":fleet["id"],"name":fname,"vehicles":vids,"users":uids}, timeout=300)
                     code = r.status_code
-                except Exception as e:
+                except:
                     code = None
                 if code == 200: st.success(f"✅ **{fname}** — Actualizada ({len(vids)} vehículos · {len(uids)} usuarios)")
                 else: st.error(f"❌ **{fname}** — Error {code}")
@@ -301,7 +303,8 @@ def page_cargar_zonas():
                                       headers={"authorization":f"Token {token}","content-type":"application/json"},
                                       json={"name":p["name"],"coordinates":coords_to_str(p["coords"]),"vehicles":[]}, timeout=15)
                     code = r.status_code
-                except: code = None
+                except:
+                    code = None
                 if code in [200,201]: st.success(f"✅ {p['name']}")
                 elif code == 400: st.warning(f"⚠️ {p['name']} — Ya existe")
                 elif code == 401: st.error(f"❌ {p['name']} — Token inválido")
@@ -330,15 +333,14 @@ def page_cambiar_rol():
     if st.button("🔍 Consultar", type="primary", disabled=not (token and user_id)):
         try:
             r = requests.get(f"http://api.simpliroute.com/v1/accounts/users/{user_id.strip()}/",
-                             headers={"Authorization":f"Token {token}","Content-Type":"application/json"}, timeout=15)
+                             headers={"Authorization":f"Token {token}"}, timeout=15)
             code, resp = r.status_code, r.json()
         except Exception as e:
             code, resp = None, str(e)
         if code == 200:
             st.session_state["user_data"] = resp; st.session_state["user_token"] = token
         else:
-            st.error(f"❌ Error {code}: {resp}")
-            st.session_state.pop("user_data", None)
+            st.error(f"❌ Error {code}: {resp}"); st.session_state.pop("user_data", None)
     if "user_data" in st.session_state:
         user = st.session_state["user_data"]
         cl, ck = get_current_role(user)
@@ -362,7 +364,8 @@ def page_cambiar_rol():
                                      headers={"Authorization":f"Token {st.session_state['user_token']}","Content-Type":"application/json"},
                                      json=payload, timeout=15)
                     code = r.status_code
-                except: code = None
+                except:
+                    code = None
                 if code == 200:
                     st.success(f"✅ Rol actualizado a **{nuevo_label}**")
                     try:
@@ -424,7 +427,6 @@ SUPPORT_AGENTS = {
 def page_desbloqueo():
     st.title("🔓 Desbloqueo de Contraseña")
     token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_unlock")
-
     if st.button("🔍 Consultar usuarios bloqueados", type="primary", disabled=not token):
         with st.spinner("Consultando..."):
             code, resp = get_users_list(token)
@@ -456,12 +458,10 @@ def page_desbloqueo():
         blocked = st.session_state["blocked_users"]
         st.divider()
         st.success(f"⚠️ {len(blocked)} usuario(s) bloqueado(s)")
-
         def ulabel(u):
             name = u.get("name") or u.get("username") or str(u.get("id"))
             un = u.get("username","")
             return f"{name} — {un}" if un != name else name
-
         selected_user = {ulabel(u): u for u in blocked}[st.selectbox("Usuario bloqueado:", [ulabel(u) for u in blocked])]
         original_email = selected_user.get("email","")
         st.caption(f"📧 Email actual: **{original_email or 'Sin email'}**")
@@ -474,7 +474,7 @@ def page_desbloqueo():
             tok = st.session_state["unlock_token"]
             prog = st.progress(0); status = st.empty()
             status.info("1/2 — Asignando email temporal...")
-            code1, resp1 = put_user_full(tok, selected_user, recovery_email)
+            code1, _ = put_user_full(tok, selected_user, recovery_email)
             prog.progress(50)
             if code1 not in [200,201]:
                 st.error(f"❌ Error al actualizar email: {code1}"); status.empty(); prog.empty()
@@ -485,7 +485,7 @@ def page_desbloqueo():
                                       headers={"Content-Type":"application/json;charset=UTF-8","authorization":"null"},
                                       json={"username": selected_user.get("username")}, timeout=30)
                     code2 = r.status_code
-                except Exception as e:
+                except:
                     code2 = None
                 prog.progress(100); status.empty(); prog.empty()
                 if code2 in [200,201]:
@@ -497,6 +497,54 @@ def page_desbloqueo():
                 else:
                     put_user_full(tok, selected_user, original_email)
                     st.error(f"❌ No se pudo enviar el link. Email restaurado. ({code2})")
+
+
+# ── FEATURE: INICIAR / CERRAR RUTAS ──────────────────────────────────────────
+def page_iniciar_cerrar_rutas():
+    st.title("🚦 Iniciar / Cerrar Rutas")
+    st.markdown("Registra el evento de inicio o cierre para una lista de rutas.")
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_routes")
+    evento = st.selectbox("📋 Tipo de evento", ["Iniciar ruta", "Finalizar ruta"])
+    event_type = "ROUTE_STARTED" if evento == "Iniciar ruta" else "ROUTE_FINISHED"
+    selected_date = st.date_input("📅 Fecha", value=date.today(), key="route_date")
+    hora = "12:00:00.000Z" if event_type == "ROUTE_STARTED" else "22:00:00.000Z"
+    date_time = f"{selected_date.strftime('%Y-%m-%d')}T{hora}"
+    st.caption(f"📅 Fecha y hora que se usará: **{date_time}**")
+    st.divider()
+    st.caption("Pega los IDs de ruta uno por línea:\n```\n637f11a2-a1a6-4609-8c23-83e8c76dccbf\n```")
+    route_ids_raw = st.text_area("IDs de ruta", placeholder="637f11a2-a1a6-4609-8c23-83e8c76dccbf",
+                                 height=200, label_visibility="collapsed")
+    if st.button(f"🚀 {evento}", type="primary", disabled=not (token and route_ids_raw)):
+        route_ids = [l.strip() for l in route_ids_raw.strip().splitlines() if l.strip()]
+        if not route_ids: st.error("❌ No se encontraron IDs."); return
+        prog = st.progress(0); status = st.empty()
+        for i, route_id in enumerate(route_ids):
+            status.info(f"Procesando: **{route_id}** ({i+1}/{len(route_ids)})")
+            try:
+                r = requests.get(f"http://api.simpliroute.com/v1/routes/routes/{route_id}/",
+                                 headers={"Authorization":f"Token {token}","Content-Type":"application/json"}, timeout=30)
+                code_get, route_data = r.status_code, r.json()
+            except Exception as e:
+                st.error(f"❌ **{route_id}** — Error: {e}"); prog.progress((i+1)/len(route_ids)); continue
+            if code_get != 200:
+                st.error(f"❌ **{route_id}** — Error {code_get}"); prog.progress((i+1)/len(route_ids)); continue
+            lat = route_data.get("location_start_latitude") if event_type == "ROUTE_STARTED" else route_data.get("location_end_latitude")
+            lng = route_data.get("location_start_longitude") if event_type == "ROUTE_STARTED" else route_data.get("location_end_longitude")
+            if not lat or not lng:
+                st.warning(f"⚠️ **{route_id}** — Sin coordenadas"); prog.progress((i+1)/len(route_ids)); continue
+            try:
+                r2 = requests.post("http://api.simpliroute.com/v1/events/register/",
+                                   headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
+                                   json={"date_time":date_time,"latitude":float(lat),"longitude":float(lng),
+                                         "route_id":route_id,"type":event_type}, timeout=30)
+                code_post = r2.status_code
+            except Exception as e:
+                st.error(f"❌ **{route_id}** — Error: {e}"); prog.progress((i+1)/len(route_ids)); continue
+            if code_post in [200,201]: st.success(f"✅ **{route_id}** — {evento} registrado")
+            elif code_post == 401: st.error(f"❌ **{route_id}** — Token inválido")
+            else: st.error(f"❌ **{route_id}** — Error {code_post}")
+            prog.progress((i+1)/len(route_ids))
+        status.empty(); prog.empty()
 
 
 # ── FEATURE: REENVIAR WEBHOOKS ────────────────────────────────────────────────
@@ -523,7 +571,8 @@ def page_reenviar_webhooks():
                                   headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
                                   json={"account_ids":[int(account_id)],"planned_date":today,"visit_ids":ids}, timeout=60)
                 code = r.status_code
-            except: code = None
+            except:
+                code = None
         if code in [200,201]: st.success(f"✅ Webhooks reenviados para {len(ids)} visitas")
         elif code == 401: st.error("❌ Token inválido")
         elif code == 404: st.error("❌ Cuenta no encontrada")
@@ -534,7 +583,6 @@ def page_reenviar_webhooks():
 def page_visit_types_skills():
     st.title("🏷️ Tipos de Visita y Skills")
     token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_vts")
-
     st.markdown("---"); st.subheader("🔧 Skills")
     def tpl_skills():
         wb=openpyxl.Workbook(); ws=wb.active; ws.title="Skills"
@@ -562,7 +610,6 @@ def page_visit_types_skills():
                 except Exception as e: code,resp=None,str(e)
                 results.append({"skill":row["skill"],"code":code,"resp":resp}); prog.progress((i+1)/len(rows))
             status.empty(); prog.empty(); show_results(results, "skill")
-
     st.markdown("---"); st.subheader("📋 Tipos de Visita")
     def tpl_vt():
         wb=openpyxl.Workbook(); ws=wb.active; ws.title="Tipos de Visita"
@@ -593,87 +640,55 @@ def page_visit_types_skills():
             status.empty(); prog.empty(); show_results(results, "label")
 
 
-# ── FEATURE: INICIAR / CERRAR RUTAS ──────────────────────────────────────────
-def page_iniciar_cerrar_rutas():
-    st.title("🚦 Iniciar / Cerrar Rutas")
-    st.markdown("Registra el evento de inicio o cierre para una lista de rutas.")
+# ── FEATURE: VALIDACIÓN DE GPS ────────────────────────────────────────────────
+def page_validacion_gps():
+    st.title("📡 Validación de GPS")
+    st.markdown("Consulta si un vehículo o conductor tiene registros de ubicación para una fecha determinada.")
+    col1, col2 = st.columns(2)
+    with col1: token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_gps")
+    with col2: entity_type = st.selectbox("🔍 Consultar por", ["Vehículo", "Conductor"])
+    col3, col4 = st.columns(2)
+    with col3: entity_id = st.text_input("🆔 ID", placeholder="Ej: 568025")
+    with col4: selected_date = st.date_input("📅 Fecha", value=date.today(), key="gps_date")
 
-    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_routes")
-
-    evento = st.selectbox("📋 Tipo de evento", ["Iniciar ruta", "Finalizar ruta"])
-    event_type = "ROUTE_STARTED" if evento == "Iniciar ruta" else "ROUTE_FINISHED"
-
-    selected_date = st.date_input("📅 Fecha", value=date.today())
-    hora = "12:00:00.000Z" if event_type == "ROUTE_STARTED" else "22:00:00.000Z"
-    date_time = f"{selected_date.strftime('%Y-%m-%d')}T{hora}"
-    st.caption(f"📅 Fecha y hora que se usará: **{date_time}**")
-
-    st.divider()
-    st.caption("Pega los IDs de ruta uno por línea, por ejemplo:\n```\n637f11a2-a1a6-4609-8c23-83e8c76dccbf\nb9055313-a698-4af9-a676-fe63ca175ace\n```")
-    route_ids_raw = st.text_area("IDs de ruta", placeholder="637f11a2-a1a6-4609-8c23-83e8c76dccbf\nb9055313-...",
-                                 height=200, label_visibility="collapsed")
-
-    if st.button(f"🚀 {evento}", type="primary", disabled=not (token and route_ids_raw)):
-        route_ids = [l.strip() for l in route_ids_raw.strip().splitlines() if l.strip()]
-        if not route_ids:
-            st.error("❌ No se encontraron IDs válidos."); return
-
-        prog = st.progress(0); status = st.empty()
-
-        for i, route_id in enumerate(route_ids):
-            status.info(f"Procesando: **{route_id}** ({i+1}/{len(route_ids)})")
-
-            # GET info de la ruta
+    if st.button("🔍 Consultar GPS", type="primary", disabled=not (token and entity_id)):
+        param_key = "vehicle_id" if entity_type == "Vehículo" else "driver_id"
+        date_str = selected_date.strftime("%Y-%m-%d")
+        url = f"https://api-gateway.simpliroute.com/v1/tracking/locations/{date_str}/?{param_key}={entity_id.strip()}"
+        with st.spinner("Consultando registros GPS..."):
             try:
-                r = requests.get(f"http://api.simpliroute.com/v1/routes/routes/{route_id}/",
-                                 headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
-                                 timeout=30)
-                code_get, route_data = r.status_code, r.json()
+                r = requests.get(url, headers={"Authorization": f"Token {token}"}, timeout=30)
+                code, data = r.status_code, r.json()
             except Exception as e:
-                st.error(f"❌ **{route_id}** — Error consultando ruta: {e}")
-                prog.progress((i+1)/len(route_ids)); continue
+                st.error(f"❌ Error de conexión: {e}"); return
+        if code == 401: st.error("❌ Token inválido."); return
+        elif code != 200: st.error(f"❌ Error {code}"); return
 
-            if code_get != 200:
-                st.error(f"❌ **{route_id}** — Error {code_get} al consultar ruta")
-                prog.progress((i+1)/len(route_ids)); continue
+        if not data:
+            st.error(f"❌ Sin registros GPS — El {entity_type.lower()} **{entity_id}** no tiene datos para el **{date_str}**.")
+        else:
+            st.success(f"✅ GPS integrado — **{len(data)} registro(s)** para el {entity_type.lower()} **{entity_id}** el **{date_str}**")
+            with st.expander(f"Ver registros ({len(data)})"):
+                for rec in data[:10]:
+                    st.markdown(f"- `{rec.get('timestamp','—')}` | lat: `{rec.get('latitude','—')}` | lng: `{rec.get('longitude','—')}` | accuracy: `{rec.get('accuracy','—')}`")
+                if len(data) > 10:
+                    st.caption(f"... y {len(data)-10} registros más.")
 
-            # Seleccionar lat/lng según el tipo de evento
-            if event_type == "ROUTE_STARTED":
-                lat = route_data.get("location_start_latitude")
-                lng = route_data.get("location_start_longitude")
-            else:
-                lat = route_data.get("location_end_latitude")
-                lng = route_data.get("location_end_longitude")
+            def make_gps_excel(records):
+                wb = openpyxl.Workbook(); ws = wb.active; ws.title = "GPS"
+                ws.append(["timestamp","latitude","longitude","activity_type","type","id","accuracy"])
+                for rec in records:
+                    ws.append([rec.get("timestamp",""), rec.get("latitude",""), rec.get("longitude",""),
+                               rec.get("activity_type",""), rec.get("type",""), rec.get("id",""), rec.get("accuracy","")])
+                ws.column_dimensions["A"].width = 25
+                buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
-            if not lat or not lng:
-                st.warning(f"⚠️ **{route_id}** — Sin coordenadas disponibles para este evento")
-                prog.progress((i+1)/len(route_ids)); continue
-
-            # POST evento
-            try:
-                r2 = requests.post("http://api.simpliroute.com/v1/events/register/",
-                                   headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
-                                   json={"date_time": date_time, "latitude": float(lat),
-                                         "longitude": float(lng), "route_id": route_id, "type": event_type},
-                                   timeout=30)
-                code_post = r2.status_code
-            except Exception as e:
-                st.error(f"❌ **{route_id}** — Error registrando evento: {e}")
-                prog.progress((i+1)/len(route_ids)); continue
-
-            if code_post in [200, 201]:
-                st.success(f"✅ **{route_id}** — {evento} registrado correctamente")
-            elif code_post == 401:
-                st.error(f"❌ **{route_id}** — Token inválido")
-            else:
-                st.error(f"❌ **{route_id}** — Error {code_post}")
-
-            prog.progress((i+1)/len(route_ids))
-
-        status.empty(); prog.empty()
+            st.download_button("⬇️ Descargar Excel", data=make_gps_excel(data),
+                               file_name=f"gps_{entity_type.lower()}_{entity_id}_{date_str}.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-
+# ── TMS: TIPOS DE DOCUMENTO ───────────────────────────────────────────────────
 def page_tms_document_types():
     st.title("📄 Tipos de Documento TMS")
     COUNTRY_OPTIONS = ["PE","CL","MX","CO","AR","EC","BO","UY","PY","VE"]
