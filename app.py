@@ -648,43 +648,79 @@ def page_validacion_gps():
     with col1: token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_gps")
     with col2: entity_type = st.selectbox("🔍 Consultar por", ["Vehículo", "Conductor"])
     col3, col4 = st.columns(2)
-    with col3: entity_id = st.text_input("🆔 ID", placeholder="Ej: 568025")
+    with col3:
+        st.caption("Pega los IDs uno por línea:\n```\n568025\n568026\n```")
+        entity_ids_raw = st.text_area("IDs", placeholder="568025\n568026", height=150, label_visibility="collapsed")
     with col4: selected_date = st.date_input("📅 Fecha", value=date.today(), key="gps_date")
 
-    if st.button("🔍 Consultar GPS", type="primary", disabled=not (token and entity_id)):
+    if st.button("🔍 Consultar GPS", type="primary", disabled=not (token and entity_ids_raw)):
         param_key = "vehicle_id" if entity_type == "Vehículo" else "driver_id"
         date_str = selected_date.strftime("%Y-%m-%d")
-        url = f"https://api-gateway.simpliroute.com/v1/tracking/locations/{date_str}/?{param_key}={entity_id.strip()}"
-        with st.spinner("Consultando registros GPS..."):
+        entity_ids = [l.strip() for l in entity_ids_raw.strip().splitlines() if l.strip()]
+
+        if not entity_ids:
+            st.error("❌ No se encontraron IDs."); return
+
+        con_data = []
+        sin_data = []
+        all_records = []
+
+        prog = st.progress(0); status = st.empty()
+
+        for i, eid in enumerate(entity_ids):
+            status.info(f"Consultando {entity_type.lower()} **{eid}** ({i+1}/{len(entity_ids)})")
+            url = f"https://api-gateway.simpliroute.com/v1/tracking/locations/{date_str}/?{param_key}={eid}"
             try:
                 r = requests.get(url, headers={"Authorization": f"Token {token}"}, timeout=30)
                 code, data = r.status_code, r.json()
             except Exception as e:
-                st.error(f"❌ Error de conexión: {e}"); return
-        if code == 401: st.error("❌ Token inválido."); return
-        elif code != 200: st.error(f"❌ Error {code}"); return
+                st.error(f"❌ **{eid}** — Error de conexión: {e}")
+                prog.progress((i+1)/len(entity_ids)); continue
 
-        if not data:
-            st.error(f"❌ Sin registros GPS — El {entity_type.lower()} **{entity_id}** no tiene datos para el **{date_str}**.")
-        else:
-            st.success(f"✅ GPS integrado — **{len(data)} registro(s)** para el {entity_type.lower()} **{entity_id}** el **{date_str}**")
-            with st.expander(f"Ver registros ({len(data)})"):
-                for rec in data[:10]:
-                    st.markdown(f"- `{rec.get('timestamp','—')}` | lat: `{rec.get('latitude','—')}` | lng: `{rec.get('longitude','—')}` | accuracy: `{rec.get('accuracy','—')}`")
-                if len(data) > 10:
-                    st.caption(f"... y {len(data)-10} registros más.")
+            if code == 401:
+                st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+            elif code != 200:
+                st.error(f"❌ **{eid}** — Error {code}")
+            elif not data:
+                sin_data.append(eid)
+            else:
+                con_data.append({"id": eid, "count": len(data)})
+                for rec in data:
+                    rec["entity_id"] = eid
+                    all_records.append(rec)
 
+            prog.progress((i+1)/len(entity_ids))
+
+        status.empty(); prog.empty()
+        st.divider()
+
+        # Resumen
+        st.subheader("📊 Resumen")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.success(f"✅ Con data GPS: **{len(con_data)}**")
+            for item in con_data:
+                st.markdown(f"- ID `{item['id']}` — {item['count']} registros")
+        with col_b:
+            st.error(f"❌ Sin data GPS: **{len(sin_data)}**")
+            for eid in sin_data:
+                st.markdown(f"- ID `{eid}`")
+
+        # Descarga Excel con todos los registros
+        if all_records:
             def make_gps_excel(records):
                 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "GPS"
-                ws.append(["timestamp","latitude","longitude","activity_type","type","id","accuracy"])
+                ws.append(["entity_id","timestamp","latitude","longitude","activity_type","type","id","accuracy"])
                 for rec in records:
-                    ws.append([rec.get("timestamp",""), rec.get("latitude",""), rec.get("longitude",""),
-                               rec.get("activity_type",""), rec.get("type",""), rec.get("id",""), rec.get("accuracy","")])
-                ws.column_dimensions["A"].width = 25
+                    ws.append([rec.get("entity_id",""), rec.get("timestamp",""), rec.get("latitude",""),
+                               rec.get("longitude",""), rec.get("activity_type",""), rec.get("type",""),
+                               rec.get("id",""), rec.get("accuracy","")])
+                ws.column_dimensions["A"].width = 12; ws.column_dimensions["B"].width = 25
                 buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
 
-            st.download_button("⬇️ Descargar Excel", data=make_gps_excel(data),
-                               file_name=f"gps_{entity_type.lower()}_{entity_id}_{date_str}.xlsx",
+            st.download_button("⬇️ Descargar Excel con todos los registros",
+                               data=make_gps_excel(all_records),
+                               file_name=f"gps_{entity_type.lower()}_{date_str}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
