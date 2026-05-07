@@ -16,6 +16,7 @@ CORE_OPTIONS = [
     "👤 Cambiar Rol de Usuario",
     "🔔 Crear Webhook",
     "🔓 Desbloqueo de Contraseña",
+    "✏️ Edición de Visitas",
     "🗑️ Eliminación Masiva de Visitas",
     "🚦 Iniciar / Cerrar Rutas",
     "🔁 Reenviar Webhooks",
@@ -647,7 +648,116 @@ def page_visit_types_skills():
             status.empty(); prog.empty(); show_results(results, "label")
 
 
-# ── FEATURE: ELIMINACIÓN MASIVA DE VISITAS ───────────────────────────────────
+# ── FEATURE: EDICIÓN DE VISITAS ───────────────────────────────────────────────
+def page_edicion_visitas():
+    st.title("✏️ Edición de Visitas")
+    st.markdown("Edita la fecha planificada o la ruta asignada de un lote de visitas.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_edit_visits")
+
+    st.divider()
+    st.subheader("📋 IDs de visita")
+    st.caption("Pega los IDs uno por línea:\n```\n833673298\n837739792\n```")
+    visit_ids_raw = st.text_area("IDs de visita", placeholder="833673298\n837739792",
+                                 height=180, label_visibility="collapsed")
+
+    st.divider()
+    st.subheader("📅 Fecha planificada")
+    date_action = st.radio("Acción sobre la fecha:", ["No cambiar", "Asignar nueva fecha", "Eliminar fecha"],
+                           horizontal=True, key="date_action")
+    new_date = None
+    if date_action == "Asignar nueva fecha":
+        new_date = st.date_input("Selecciona la fecha:", value=date.today(), key="edit_date")
+        st.caption(f"Se asignará: **{new_date.strftime('%Y-%m-%d')}**")
+    elif date_action == "Eliminar fecha":
+        st.warning("⚠️ Se eliminará la fecha planificada de todas las visitas.")
+
+    st.divider()
+    st.subheader("🛣️ Ruta")
+    route_action = st.radio("Acción sobre la ruta:", ["No cambiar", "Asignar ruta", "Eliminar ruta"],
+                            horizontal=True, key="route_action")
+    new_route = None
+    if route_action == "Asignar ruta":
+        new_route = st.text_input("ID de la ruta:", placeholder="5859a5d1-03c5-4152-bcea-500bab2ad47d")
+    elif route_action == "Eliminar ruta":
+        st.warning("⚠️ Se eliminará la ruta asignada de todas las visitas.")
+
+    st.divider()
+
+    # Validar que haya al menos un cambio
+    no_changes = date_action == "No cambiar" and route_action == "No cambiar"
+
+    if st.button("🚀 Editar visitas", type="primary",
+                 disabled=not (token and visit_ids_raw) or no_changes):
+
+        if no_changes:
+            st.warning("⚠️ Selecciona al menos una acción (fecha o ruta)."); return
+
+        # Parsear IDs
+        visit_ids = []
+        for l in visit_ids_raw.strip().splitlines():
+            l = l.strip()
+            if not l: continue
+            try: visit_ids.append(int(l))
+            except: st.warning(f"⚠️ ID inválido ignorado: {l}")
+
+        if not visit_ids:
+            st.error("❌ No se encontraron IDs válidos."); return
+
+        # Construir payload base por visita
+        def build_payload(vid):
+            p = {"id": vid}
+            if date_action == "Asignar nueva fecha":
+                p["planned_date"] = new_date.strftime("%Y-%m-%d")
+            elif date_action == "Eliminar fecha":
+                p["planned_date"] = None
+            if route_action == "Asignar ruta":
+                p["route"] = new_route.strip()
+            elif route_action == "Eliminar ruta":
+                p["route"] = None
+            return p
+
+        prog = st.progress(0); status = st.empty()
+        ok_count = 0; err_count = 0
+        BATCH_SIZE = 500
+
+        batches = [visit_ids[i:i+BATCH_SIZE] for i in range(0, len(visit_ids), BATCH_SIZE)]
+
+        for i, batch in enumerate(batches):
+            status.info(f"Editando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({ok_count} editadas hasta ahora)")
+            payload = [build_payload(vid) for vid in batch]
+            try:
+                r = requests.patch("http://api.simpliroute.com/v1/routes/visits/",
+                                   headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
+                                   json=payload, timeout=300)
+                code = r.status_code
+            except Exception as e:
+                if "timed out" in str(e).lower() or "timeout" in str(e).lower():
+                    st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. Es posible que las visitas hayan sido editadas igualmente.")
+                else:
+                    st.error(f"❌ Error en lote {i+1}: {e}")
+                err_count += 1; prog.progress((i+1)/len(batches)); continue
+
+            if code in [200, 201]:
+                ok_count += len(batch)
+                st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas editadas")
+            elif code == 401:
+                st.error("❌ Token inválido. Proceso detenido."); status.empty(); prog.empty(); return
+            else:
+                st.error(f"❌ Lote {i+1} — Error {code}")
+                err_count += 1
+
+            prog.progress((i+1)/len(batches))
+
+        status.empty(); prog.empty()
+        st.divider()
+        if err_count == 0:
+            st.success(f"✅ Proceso completado — **{ok_count} visitas editadas**")
+        else:
+            st.warning(f"⚠️ Proceso completado con errores — **{ok_count} editadas**, {err_count} lote(s) fallido(s)")
+
+
+
 def page_eliminacion_visitas():
     st.title("🗑️ Eliminación Masiva de Visitas")
     st.error("⚠️ **ADVERTENCIA:** Esta operación elimina visitas directamente desde la base de datos. La eliminación es permanente y no se puede deshacer. Asegúrate de que los IDs sean correctos antes de continuar.")
@@ -895,6 +1005,7 @@ elif selected == "🗺️ Cargar Zonas": page_cargar_zonas()
 elif selected == "👤 Cambiar Rol de Usuario": page_cambiar_rol()
 elif selected == "🔔 Crear Webhook": page_crear_webhook()
 elif selected == "🔓 Desbloqueo de Contraseña": page_desbloqueo()
+elif selected == "✏️ Edición de Visitas": page_edicion_visitas()
 elif selected == "🗑️ Eliminación Masiva de Visitas": page_eliminacion_visitas()
 elif selected == "🚦 Iniciar / Cerrar Rutas": page_iniciar_cerrar_rutas()
 elif selected == "🔁 Reenviar Webhooks": page_reenviar_webhooks()
