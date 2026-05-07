@@ -16,6 +16,7 @@ CORE_OPTIONS = [
     "👤 Cambiar Rol de Usuario",
     "🔔 Crear Webhook",
     "🔓 Desbloqueo de Contraseña",
+    "🗑️ Eliminación Masiva de Visitas",
     "🚦 Iniciar / Cerrar Rutas",
     "🔁 Reenviar Webhooks",
     "🏷️ Tipos de Visita y Skills",
@@ -46,6 +47,8 @@ with st.sidebar:
     st.markdown("### 📦 TMS")
     for item in TMS_OPTIONS:
         nav_item(item)
+    st.markdown("---")
+    st.link_button("🔧 Tools Julio", "https://simpliroute-tools.streamlit.app/", use_container_width=True)
     st.markdown("---")
     st.caption("SimpliRoute Internal Tools v1.0")
 
@@ -644,7 +647,86 @@ def page_visit_types_skills():
             status.empty(); prog.empty(); show_results(results, "label")
 
 
-# ── FEATURE: VALIDACIÓN DE GPS ────────────────────────────────────────────────
+# ── FEATURE: ELIMINACIÓN MASIVA DE VISITAS ───────────────────────────────────
+def page_eliminacion_visitas():
+    st.title("🗑️ Eliminación Masiva de Visitas")
+    st.error("⚠️ **ADVERTENCIA:** Esta operación elimina visitas directamente desde la base de datos. La eliminación es permanente y no se puede deshacer. Asegúrate de que los IDs sean correctos antes de continuar.")
+
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_delete")
+
+    def make_template():
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Visitas"
+        ws.append(["id"])
+        ws.append([838112279])
+        ws.append([838112568])
+        ws.column_dimensions["A"].width = 20
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+    st.download_button("📥 Descargar plantilla", data=make_template(),
+                       file_name="plantilla_eliminacion_visitas.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    visits_file = st.file_uploader("📂 Sube tu Excel con IDs de visita", type=["xlsx"], key="upload_delete")
+
+    if visits_file:
+        try:
+            wb = openpyxl.load_workbook(visits_file); ws = wb.active
+            headers = [str(c.value).strip() if c.value else "" for c in ws[1]]
+            if "id" not in headers:
+                st.error("❌ El Excel debe tener una columna llamada 'id'."); return
+            idx = headers.index("id")
+            visit_ids = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                val = row[idx] if idx < len(row) else None
+                if val is not None:
+                    try: visit_ids.append(int(val))
+                    except: pass
+            if not visit_ids:
+                st.error("❌ No se encontraron IDs válidos."); return
+            st.info(f"📋 **{len(visit_ids)} visitas** cargadas. Se procesarán en lotes de 2,000.")
+        except Exception as e:
+            st.error(f"❌ Error leyendo el archivo: {e}"); return
+
+        st.divider()
+        confirm = st.checkbox("✅ Confirmo que quiero eliminar estas visitas de forma permanente")
+
+        if confirm and st.button("🗑️ Eliminar visitas", type="primary", disabled=not token):
+            BATCH_SIZE = 2000
+            total = len(visit_ids)
+            batches = [visit_ids[i:i+BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
+            prog = st.progress(0); status = st.empty()
+            total_deleted = 0; errors = 0
+
+            for i, batch in enumerate(batches):
+                status.info(f"Procesando lote {i+1}/{len(batches)} — eliminando {len(batch)} visitas... ({total_deleted} eliminadas hasta ahora)")
+                try:
+                    r = requests.post("http://api.simpliroute.com/v1/bulk/delete/visits/",
+                                      headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
+                                      json={"visits": batch}, timeout=120)
+                    code = r.status_code
+                except Exception as e:
+                    st.error(f"❌ Error en lote {i+1}: {e}"); errors += 1
+                    prog.progress((i+1)/len(batches)); continue
+
+                if code in [200, 201, 204]:
+                    total_deleted += len(batch)
+                    st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas eliminadas")
+                elif code == 401:
+                    st.error("❌ Token inválido. Proceso detenido."); status.empty(); prog.empty(); return
+                else:
+                    st.error(f"❌ Lote {i+1} — Error {code}"); errors += 1
+
+                prog.progress((i+1)/len(batches))
+
+            status.empty(); prog.empty()
+            st.divider()
+            if errors == 0:
+                st.success(f"✅ Proceso completado — **{total_deleted} visitas eliminadas** en {len(batches)} lote(s)")
+            else:
+                st.warning(f"⚠️ Proceso completado con errores — **{total_deleted} visitas eliminadas**, {errors} lote(s) fallido(s)")
+
+
+
 def page_validacion_gps():
     st.title("📡 Validación de GPS")
     st.markdown("Consulta si un vehículo o conductor tiene registros de ubicación para una fecha determinada.")
@@ -809,6 +891,7 @@ elif selected == "🗺️ Cargar Zonas": page_cargar_zonas()
 elif selected == "👤 Cambiar Rol de Usuario": page_cambiar_rol()
 elif selected == "🔔 Crear Webhook": page_crear_webhook()
 elif selected == "🔓 Desbloqueo de Contraseña": page_desbloqueo()
+elif selected == "🗑️ Eliminación Masiva de Visitas": page_eliminacion_visitas()
 elif selected == "🚦 Iniciar / Cerrar Rutas": page_iniciar_cerrar_rutas()
 elif selected == "🔁 Reenviar Webhooks": page_reenviar_webhooks()
 elif selected == "🏷️ Tipos de Visita y Skills": page_visit_types_skills()
