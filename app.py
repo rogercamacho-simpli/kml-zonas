@@ -702,10 +702,14 @@ def page_eliminacion_visitas():
                 try:
                     r = requests.post("http://api.simpliroute.com/v1/bulk/delete/visits/",
                                       headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
-                                      json={"visits": batch}, timeout=120)
+                                      json={"visits": batch}, timeout=300)
                     code = r.status_code
                 except Exception as e:
-                    st.error(f"❌ Error en lote {i+1}: {e}"); errors += 1
+                    if "timed out" in str(e).lower() or "timeout" in str(e).lower():
+                        st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. La API tardó más de lo esperado. Es posible que las visitas hayan sido eliminadas igualmente. Se recomienda verificar antes de reintentar.")
+                    else:
+                        st.error(f"❌ Error en lote {i+1}: {e}")
+                    errors += 1
                     prog.progress((i+1)/len(batches)); continue
 
                 if code in [200, 201, 204]:
