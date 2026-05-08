@@ -19,6 +19,7 @@ CORE_OPTIONS = [
     "✏️ Edición de Visitas",
     "🗑️ Eliminación Masiva de Visitas",
     "🚦 Iniciar / Cerrar Rutas",
+    "📍 Análisis de Recorrido GPS",
     "🔁 Reenviar Webhooks",
     "🏷️ Tipos de Visita y Skills",
     "📡 Validación de GPS",
@@ -1008,6 +1009,7 @@ elif selected == "🔓 Desbloqueo de Contraseña": page_desbloqueo()
 elif selected == "✏️ Edición de Visitas": page_edicion_visitas()
 elif selected == "🗑️ Eliminación Masiva de Visitas": page_eliminacion_visitas()
 elif selected == "🚦 Iniciar / Cerrar Rutas": page_iniciar_cerrar_rutas()
+elif selected == "📍 Análisis de Recorrido GPS": page_analisis_gps()
 elif selected == "🔁 Reenviar Webhooks": page_reenviar_webhooks()
 elif selected == "🏷️ Tipos de Visita y Skills": page_visit_types_skills()
 elif selected == "📡 Validación de GPS": page_validacion_gps()
