@@ -718,9 +718,9 @@ def page_analisis_gps():
     # ── Análisis de recorrido ─────────────────────────────────────────────────
     st.divider()
     st.subheader("🛣️ Análisis de recorrido")
-    st.caption("Puntos anómalos: velocidad implícita entre puntos consecutivos **> 80 km/h**.")
+    st.caption("Puntos anómalos: velocidad implícita entre puntos consecutivos **> 500 km/h**.")
 
-    VELOCIDAD_MAX = 80
+    VELOCIDAD_MAX = 500
     total_bruto = 0; total_limpio = 0
     anomalos = []; detalles = []
 
