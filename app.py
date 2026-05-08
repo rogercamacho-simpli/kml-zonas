@@ -1005,14 +1005,14 @@ def page_validacion_gps():
                                        mime="application/json")
 
     else:  # Por par
-        st.info("ℹ️ Ingresa los IDs en el mismo orden en ambas cajas. La línea 1 del conductor se empareja con la línea 1 del vehículo.")
+    
         col3, col4 = st.columns(2)
         with col3:
-            st.caption("IDs de conductor — uno por línea:")
-            driver_ids_raw = st.text_area("Driver IDs", placeholder="523842\n281486", height=80, label_visibility="collapsed", key="driver_ids")
+            st.caption("ID de conductor:")
+            driver_ids_raw = st.text_area("Driver IDs", placeholder="523842", height=80, label_visibility="collapsed", key="driver_ids")
         with col4:
-            st.caption("IDs de vehículo — uno por línea (mismo orden):")
-            vehicle_ids_raw = st.text_area("Vehicle IDs", placeholder="674797\n568025", height=80, label_visibility="collapsed", key="vehicle_ids")
+            st.caption("ID de vehículo:")
+            vehicle_ids_raw = st.text_area("Vehicle IDs", placeholder="674797", height=80, label_visibility="collapsed", key="vehicle_ids")
 
         if st.button("🔍 Consultar GPS", type="primary", disabled=not (token and driver_ids_raw and vehicle_ids_raw), key="btn_gps_pair"):
             driver_ids = [l.strip() for l in driver_ids_raw.strip().splitlines() if l.strip()]
