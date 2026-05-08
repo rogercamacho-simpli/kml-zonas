@@ -754,9 +754,22 @@ def page_analisis_gps():
     col3.metric("⚠️ Puntos anómalos", len(anomalos))
 
     if anomalos:
-        st.markdown("**Puntos anómalos detectados:**")
-        for a in anomalos:
+        st.markdown(f"**{len(anomalos)} puntos anómalos detectados — últimos 10:**")
+        for a in anomalos[-10:]:
             st.error(f"⚠️ Índice {a['index']} | `{a['timestamp']}` | `{a['lat']}, {a['lon']}` | Distancia: **{a['dist_km']} km** | Velocidad implícita: **{a['velocidad_kmh']} km/h**")
+
+        def make_excel_anomalos(items):
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Anomalos"
+            ws.append(["index","timestamp","latitude","longitude","distancia_km","velocidad_kmh"])
+            for a in items:
+                ws.append([a["index"],a["timestamp"],a["lat"],a["lon"],a["dist_km"],a["velocidad_kmh"]])
+            ws.column_dimensions["B"].width = 25
+            buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+        st.download_button("⬇️ Descargar Excel con todos los puntos anómalos",
+                           data=make_excel_anomalos(anomalos),
+                           file_name="puntos_anomalos.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.success("✅ No se detectaron puntos anómalos.")
 
