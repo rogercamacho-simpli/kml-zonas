@@ -4,7 +4,8 @@ import io
 import re
 import requests
 import json
-from datetime import date
+import math
+from datetime import date, datetime
 
 st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wide")
 
@@ -58,6 +59,14 @@ selected = st.session_state["current_page"]
 
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
+def haversine_m(lat1, lon1, lat2, lon2):
+    R = 6371000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 def decode_file(raw_bytes):
     for enc in ["utf-8", "latin-1", "cp1252"]:
         try:
@@ -508,12 +517,145 @@ def page_desbloqueo():
                     st.error(f"❌ No se pudo enviar el link. Email restaurado. ({code2})")
 
 
+# ── FEATURE: EDICIÓN DE VISITAS ───────────────────────────────────────────────
+def page_edicion_visitas():
+    st.title("✏️ Edición de Visitas")
+    st.markdown("Edita la fecha planificada o la ruta asignada de un lote de visitas.")
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_edit_visits")
+    st.divider()
+    st.subheader("📋 IDs de visita")
+    st.caption("Pega los IDs uno por línea:\n```\n833673298\n837739792\n```")
+    visit_ids_raw = st.text_area("IDs de visita", placeholder="833673298\n837739792", height=180, label_visibility="collapsed")
+    st.divider()
+    st.subheader("📅 Fecha planificada")
+    date_action = st.radio("Acción sobre la fecha:", ["No cambiar","Asignar nueva fecha","Eliminar fecha"], horizontal=True, key="date_action")
+    new_date = None
+    if date_action == "Asignar nueva fecha":
+        new_date = st.date_input("Selecciona la fecha:", value=date.today(), key="edit_date")
+        st.caption(f"Se asignará: **{new_date.strftime('%Y-%m-%d')}**")
+    elif date_action == "Eliminar fecha":
+        st.warning("⚠️ Se eliminará la fecha planificada de todas las visitas.")
+    st.divider()
+    st.subheader("🛣️ Ruta")
+    route_action = st.radio("Acción sobre la ruta:", ["No cambiar","Asignar ruta","Eliminar ruta"], horizontal=True, key="route_action")
+    new_route = None
+    if route_action == "Asignar ruta":
+        new_route = st.text_input("ID de la ruta:", placeholder="5859a5d1-03c5-4152-bcea-500bab2ad47d")
+    elif route_action == "Eliminar ruta":
+        st.warning("⚠️ Se eliminará la ruta asignada de todas las visitas.")
+    st.divider()
+    no_changes = date_action == "No cambiar" and route_action == "No cambiar"
+    if st.button("🚀 Editar visitas", type="primary", disabled=not (token and visit_ids_raw) or no_changes):
+        visit_ids = []
+        for l in visit_ids_raw.strip().splitlines():
+            l = l.strip()
+            if not l: continue
+            try: visit_ids.append(int(l))
+            except: st.warning(f"⚠️ ID inválido ignorado: {l}")
+        if not visit_ids: st.error("❌ No se encontraron IDs válidos."); return
+
+        def build_payload(vid):
+            p = {"id": vid}
+            if date_action == "Asignar nueva fecha": p["planned_date"] = new_date.strftime("%Y-%m-%d")
+            elif date_action == "Eliminar fecha": p["planned_date"] = None
+            if route_action == "Asignar ruta": p["route"] = new_route.strip()
+            elif route_action == "Eliminar ruta": p["route"] = None
+            return p
+
+        prog = st.progress(0); status = st.empty()
+        ok_count = 0; err_count = 0
+        batches = [visit_ids[i:i+500] for i in range(0, len(visit_ids), 500)]
+        for i, batch in enumerate(batches):
+            status.info(f"Editando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({ok_count} editadas)")
+            try:
+                r = requests.patch("http://api.simpliroute.com/v1/routes/visits/",
+                                   headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
+                                   json=[build_payload(vid) for vid in batch], timeout=300)
+                code = r.status_code
+            except Exception as e:
+                if "timed out" in str(e).lower():
+                    st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. Es posible que las visitas hayan sido editadas igualmente.")
+                else:
+                    st.error(f"❌ Error en lote {i+1}: {e}")
+                err_count += 1; prog.progress((i+1)/len(batches)); continue
+            if code in [200,201]:
+                ok_count += len(batch); st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas editadas")
+            elif code == 401:
+                st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+            else:
+                st.error(f"❌ Lote {i+1} — Error {code}"); err_count += 1
+            prog.progress((i+1)/len(batches))
+        status.empty(); prog.empty()
+        st.divider()
+        if err_count == 0: st.success(f"✅ Completado — **{ok_count} visitas editadas**")
+        else: st.warning(f"⚠️ Completado con errores — **{ok_count} editadas**, {err_count} lote(s) fallido(s)")
+
+
+# ── FEATURE: ELIMINACIÓN MASIVA DE VISITAS ───────────────────────────────────
+def page_eliminacion_visitas():
+    st.title("🗑️ Eliminación Masiva de Visitas")
+    st.error("⚠️ **ADVERTENCIA:** Esta operación elimina visitas directamente desde la base de datos. La eliminación es permanente y no se puede deshacer.")
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_delete")
+    def make_template():
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Visitas"
+        ws.append(["id"]); ws.append([838112279]); ws.append([838112568])
+        ws.column_dimensions["A"].width = 20
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+    st.download_button("📥 Descargar plantilla", data=make_template(), file_name="plantilla_eliminacion_visitas.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    visits_file = st.file_uploader("📂 Sube tu Excel con IDs de visita", type=["xlsx"], key="upload_delete")
+    if visits_file:
+        try:
+            wb = openpyxl.load_workbook(visits_file); ws = wb.active
+            headers = [str(c.value).strip() if c.value else "" for c in ws[1]]
+            if "id" not in headers: st.error("❌ El Excel debe tener columna 'id'."); return
+            idx = headers.index("id")
+            visit_ids = []
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                val = row[idx] if idx < len(row) else None
+                if val is not None:
+                    try: visit_ids.append(int(val))
+                    except: pass
+            if not visit_ids: st.error("❌ No se encontraron IDs."); return
+            st.info(f"📋 **{len(visit_ids)} visitas** cargadas. Se procesarán en lotes de 2,000.")
+        except Exception as e:
+            st.error(f"❌ Error: {e}"); return
+        confirm = st.checkbox("✅ Confirmo que quiero eliminar estas visitas de forma permanente")
+        if confirm and st.button("🗑️ Eliminar visitas", type="primary", disabled=not token):
+            batches = [visit_ids[i:i+2000] for i in range(0, len(visit_ids), 2000)]
+            prog = st.progress(0); status = st.empty()
+            total_deleted = 0; errors = 0
+            for i, batch in enumerate(batches):
+                status.info(f"Procesando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({total_deleted} eliminadas)")
+                try:
+                    r = requests.post("http://api.simpliroute.com/v1/bulk/delete/visits/",
+                                      headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
+                                      json={"visits": batch}, timeout=300)
+                    code = r.status_code
+                except Exception as e:
+                    if "timed out" in str(e).lower():
+                        st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. Es posible que las visitas hayan sido eliminadas igualmente. Se recomienda verificar antes de reintentar.")
+                    else:
+                        st.error(f"❌ Error en lote {i+1}: {e}")
+                    errors += 1; prog.progress((i+1)/len(batches)); continue
+                if code in [200,201,204]:
+                    total_deleted += len(batch); st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas eliminadas")
+                elif code == 401:
+                    st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+                else:
+                    st.error(f"❌ Lote {i+1} — Error {code}"); errors += 1
+                prog.progress((i+1)/len(batches))
+            status.empty(); prog.empty()
+            st.divider()
+            if errors == 0: st.success(f"✅ Completado — **{total_deleted} visitas eliminadas**")
+            else: st.warning(f"⚠️ Completado con errores — **{total_deleted} eliminadas**, {errors} lote(s) fallido(s)")
+
+
 # ── FEATURE: INICIAR / CERRAR RUTAS ──────────────────────────────────────────
 def page_iniciar_cerrar_rutas():
     st.title("🚦 Iniciar / Cerrar Rutas")
-    st.markdown("Registra el evento de inicio o cierre para una lista de rutas.")
     token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_routes")
-    evento = st.selectbox("📋 Tipo de evento", ["Iniciar ruta", "Finalizar ruta"])
+    evento = st.selectbox("📋 Tipo de evento", ["Iniciar ruta","Finalizar ruta"])
     event_type = "ROUTE_STARTED" if evento == "Iniciar ruta" else "ROUTE_FINISHED"
     selected_date = st.date_input("📅 Fecha", value=date.today(), key="route_date")
     hora = "12:00:00.000Z" if event_type == "ROUTE_STARTED" else "22:00:00.000Z"
@@ -521,8 +663,7 @@ def page_iniciar_cerrar_rutas():
     st.caption(f"📅 Fecha y hora que se usará: **{date_time}**")
     st.divider()
     st.caption("Pega los IDs de ruta uno por línea:\n```\n637f11a2-a1a6-4609-8c23-83e8c76dccbf\n```")
-    route_ids_raw = st.text_area("IDs de ruta", placeholder="637f11a2-a1a6-4609-8c23-83e8c76dccbf",
-                                 height=200, label_visibility="collapsed")
+    route_ids_raw = st.text_area("IDs de ruta", placeholder="637f11a2-a1a6-4609-8c23-83e8c76dccbf", height=200, label_visibility="collapsed")
     if st.button(f"🚀 {evento}", type="primary", disabled=not (token and route_ids_raw)):
         route_ids = [l.strip() for l in route_ids_raw.strip().splitlines() if l.strip()]
         if not route_ids: st.error("❌ No se encontraron IDs."); return
@@ -556,6 +697,132 @@ def page_iniciar_cerrar_rutas():
         status.empty(); prog.empty()
 
 
+# ── FEATURE: ANÁLISIS DE RECORRIDO GPS ───────────────────────────────────────
+def page_analisis_gps():
+    st.title("📍 Análisis de Recorrido GPS")
+    st.markdown("Carga un JSON de puntos GPS para analizar el recorrido, detectar anomalías y comparar contra un punto fijo.")
+
+    json_file = st.file_uploader("📂 Sube tu archivo JSON", type=["json"], key="upload_gps_analysis")
+    if not json_file:
+        return
+
+    try:
+        data = json.loads(json_file.read())
+        if not isinstance(data, list) or len(data) < 2:
+            st.error("❌ El JSON debe ser una lista con al menos 2 puntos."); return
+    except Exception as e:
+        st.error(f"❌ Error leyendo el JSON: {e}"); return
+
+    st.success(f"✅ {len(data)} puntos cargados")
+
+    # ── Análisis de recorrido ─────────────────────────────────────────────────
+    st.divider()
+    st.subheader("🛣️ Análisis de recorrido")
+    st.caption("Puntos anómalos: velocidad implícita entre puntos consecutivos **> 80 km/h**.")
+
+    VELOCIDAD_MAX = 80
+    total_bruto = 0; total_limpio = 0
+    anomalos = []; detalles = []
+
+    for i in range(1, len(data)):
+        p1, p2 = data[i-1], data[i]
+        try:
+            lat1, lon1 = float(p1["latitude"]), float(p1["longitude"])
+            lat2, lon2 = float(p2["latitude"]), float(p2["longitude"])
+            dist_m = haversine_m(lat1, lon1, lat2, lon2)
+            velocidad_kmh = None
+            try:
+                t1 = datetime.fromisoformat(p1["timestamp"].replace("Z","+00:00"))
+                t2 = datetime.fromisoformat(p2["timestamp"].replace("Z","+00:00"))
+                seg = abs((t2-t1).total_seconds())
+                if seg > 0: velocidad_kmh = (dist_m/1000)/(seg/3600)
+            except: pass
+            es_anomalo = velocidad_kmh is not None and velocidad_kmh > VELOCIDAD_MAX
+            total_bruto += dist_m
+            if not es_anomalo: total_limpio += dist_m
+            detalles.append({"index":i,"timestamp":p2.get("timestamp","—"),"lat":lat2,"lon":lon2,
+                             "dist_m":round(dist_m,2),"velocidad_kmh":round(velocidad_kmh,1) if velocidad_kmh else None,
+                             "anomalo":es_anomalo})
+            if es_anomalo:
+                anomalos.append({"index":i,"timestamp":p2.get("timestamp","—"),"lat":lat2,"lon":lon2,
+                                 "dist_km":round(dist_m/1000,2),"velocidad_kmh":round(velocidad_kmh,1)})
+        except: continue
+
+    col1,col2,col3 = st.columns(3)
+    col1.metric("📏 Total bruto", f"{total_bruto/1000:.2f} km")
+    col2.metric("✅ Total limpio", f"{total_limpio/1000:.2f} km")
+    col3.metric("⚠️ Puntos anómalos", len(anomalos))
+
+    if anomalos:
+        st.markdown("**Puntos anómalos detectados:**")
+        for a in anomalos:
+            st.error(f"⚠️ Índice {a['index']} | `{a['timestamp']}` | `{a['lat']}, {a['lon']}` | Distancia: **{a['dist_km']} km** | Velocidad implícita: **{a['velocidad_kmh']} km/h**")
+    else:
+        st.success("✅ No se detectaron puntos anómalos.")
+
+    def make_excel_analisis(detalles):
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Recorrido"
+        ws.append(["index","timestamp","latitude","longitude","distancia_m","velocidad_kmh","anomalo"])
+        for d in detalles:
+            ws.append([d["index"],d["timestamp"],d["lat"],d["lon"],d["dist_m"],d["velocidad_kmh"],"Sí" if d["anomalo"] else "No"])
+        ws.column_dimensions["B"].width = 25
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+    st.download_button("⬇️ Descargar Excel detalle de recorrido", data=make_excel_analisis(detalles),
+                       file_name="analisis_recorrido.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    # ── Comparación con punto fijo ────────────────────────────────────────────
+    st.divider()
+    st.subheader("📌 Comparación con punto fijo")
+    st.markdown("Ingresa un punto de referencia y una distancia. Se mostrarán los puntos del JSON dentro de ese radio.")
+
+    col_a,col_b,col_c = st.columns(3)
+    with col_a: ref_lat = st.text_input("🌐 Latitud de referencia", placeholder="-22.797010")
+    with col_b: ref_lon = st.text_input("🌐 Longitud de referencia", placeholder="-43.323240")
+    with col_c: radio_m = st.number_input("📏 Distancia mínima (metros)", min_value=1, value=500, step=50,
+                                           help="Puntos dentro de este radio serán considerados cercanos al punto de referencia")
+
+    if st.button("🔍 Comparar puntos", type="primary", disabled=not (ref_lat and ref_lon)):
+        try: rlat, rlon = float(ref_lat), float(ref_lon)
+        except: st.error("❌ Latitud o longitud inválida."); return
+
+        dentro = []; fuera = 0
+        for i, p in enumerate(data):
+            try:
+                plat, plon = float(p["latitude"]), float(p["longitude"])
+                dist = haversine_m(rlat, rlon, plat, plon)
+                if dist <= radio_m:
+                    dentro.append({"index":i,"timestamp":p.get("timestamp","—"),"lat":plat,"lon":plon,"dist_m":round(dist,1)})
+                else:
+                    fuera += 1
+            except: continue
+
+        col_x,col_y = st.columns(2)
+        col_x.metric(f"✅ Dentro del radio ({radio_m}m)", len(dentro))
+        col_y.metric("❌ Fuera del radio", fuera)
+
+        if dentro:
+            with st.expander(f"Ver {len(dentro)} puntos dentro del radio"):
+                for p in dentro[:50]:
+                    st.markdown(f"- Índice `{p['index']}` | `{p['timestamp']}` | `{p['lat']}, {p['lon']}` | **{p['dist_m']} m**")
+                if len(dentro) > 50: st.caption(f"... y {len(dentro)-50} más.")
+
+            def make_excel_radio(puntos):
+                wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Puntos cercanos"
+                ws.append(["index","timestamp","latitude","longitude","distancia_al_punto_m"])
+                for p in puntos:
+                    ws.append([p["index"],p["timestamp"],p["lat"],p["lon"],p["dist_m"]])
+                ws.column_dimensions["B"].width = 25
+                buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+            st.download_button("⬇️ Descargar Excel puntos dentro del radio", data=make_excel_radio(dentro),
+                               file_name=f"puntos_dentro_{radio_m}m.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        else:
+            st.info(f"ℹ️ Ningún punto está dentro del radio de {radio_m} metros.")
+
+
 # ── FEATURE: REENVIAR WEBHOOKS ────────────────────────────────────────────────
 def page_reenviar_webhooks():
     st.title("🔁 Reenviar Webhooks")
@@ -580,8 +847,7 @@ def page_reenviar_webhooks():
                                   headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
                                   json={"account_ids":[int(account_id)],"planned_date":today,"visit_ids":ids}, timeout=60)
                 code = r.status_code
-            except:
-                code = None
+            except: code = None
         if code in [200,201]: st.success(f"✅ Webhooks reenviados para {len(ids)} visitas")
         elif code == 401: st.error("❌ Token inválido")
         elif code == 404: st.error("❌ Cuenta no encontrada")
@@ -649,205 +915,13 @@ def page_visit_types_skills():
             status.empty(); prog.empty(); show_results(results, "label")
 
 
-# ── FEATURE: EDICIÓN DE VISITAS ───────────────────────────────────────────────
-def page_edicion_visitas():
-    st.title("✏️ Edición de Visitas")
-    st.markdown("Edita la fecha planificada o la ruta asignada de un lote de visitas.")
-
-    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_edit_visits")
-
-    st.divider()
-    st.subheader("📋 IDs de visita")
-    st.caption("Pega los IDs uno por línea:\n```\n833673298\n837739792\n```")
-    visit_ids_raw = st.text_area("IDs de visita", placeholder="833673298\n837739792",
-                                 height=180, label_visibility="collapsed")
-
-    st.divider()
-    st.subheader("📅 Fecha planificada")
-    date_action = st.radio("Acción sobre la fecha:", ["No cambiar", "Asignar nueva fecha", "Eliminar fecha"],
-                           horizontal=True, key="date_action")
-    new_date = None
-    if date_action == "Asignar nueva fecha":
-        new_date = st.date_input("Selecciona la fecha:", value=date.today(), key="edit_date")
-        st.caption(f"Se asignará: **{new_date.strftime('%Y-%m-%d')}**")
-    elif date_action == "Eliminar fecha":
-        st.warning("⚠️ Se eliminará la fecha planificada de todas las visitas.")
-
-    st.divider()
-    st.subheader("🛣️ Ruta")
-    route_action = st.radio("Acción sobre la ruta:", ["No cambiar", "Asignar ruta", "Eliminar ruta"],
-                            horizontal=True, key="route_action")
-    new_route = None
-    if route_action == "Asignar ruta":
-        new_route = st.text_input("ID de la ruta:", placeholder="5859a5d1-03c5-4152-bcea-500bab2ad47d")
-    elif route_action == "Eliminar ruta":
-        st.warning("⚠️ Se eliminará la ruta asignada de todas las visitas.")
-
-    st.divider()
-
-    # Validar que haya al menos un cambio
-    no_changes = date_action == "No cambiar" and route_action == "No cambiar"
-
-    if st.button("🚀 Editar visitas", type="primary",
-                 disabled=not (token and visit_ids_raw) or no_changes):
-
-        if no_changes:
-            st.warning("⚠️ Selecciona al menos una acción (fecha o ruta)."); return
-
-        # Parsear IDs
-        visit_ids = []
-        for l in visit_ids_raw.strip().splitlines():
-            l = l.strip()
-            if not l: continue
-            try: visit_ids.append(int(l))
-            except: st.warning(f"⚠️ ID inválido ignorado: {l}")
-
-        if not visit_ids:
-            st.error("❌ No se encontraron IDs válidos."); return
-
-        # Construir payload base por visita
-        def build_payload(vid):
-            p = {"id": vid}
-            if date_action == "Asignar nueva fecha":
-                p["planned_date"] = new_date.strftime("%Y-%m-%d")
-            elif date_action == "Eliminar fecha":
-                p["planned_date"] = None
-            if route_action == "Asignar ruta":
-                p["route"] = new_route.strip()
-            elif route_action == "Eliminar ruta":
-                p["route"] = None
-            return p
-
-        prog = st.progress(0); status = st.empty()
-        ok_count = 0; err_count = 0
-        BATCH_SIZE = 500
-
-        batches = [visit_ids[i:i+BATCH_SIZE] for i in range(0, len(visit_ids), BATCH_SIZE)]
-
-        for i, batch in enumerate(batches):
-            status.info(f"Editando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({ok_count} editadas hasta ahora)")
-            payload = [build_payload(vid) for vid in batch]
-            try:
-                r = requests.patch("http://api.simpliroute.com/v1/routes/visits/",
-                                   headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
-                                   json=payload, timeout=300)
-                code = r.status_code
-            except Exception as e:
-                if "timed out" in str(e).lower() or "timeout" in str(e).lower():
-                    st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. Es posible que las visitas hayan sido editadas igualmente.")
-                else:
-                    st.error(f"❌ Error en lote {i+1}: {e}")
-                err_count += 1; prog.progress((i+1)/len(batches)); continue
-
-            if code in [200, 201]:
-                ok_count += len(batch)
-                st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas editadas")
-            elif code == 401:
-                st.error("❌ Token inválido. Proceso detenido."); status.empty(); prog.empty(); return
-            else:
-                st.error(f"❌ Lote {i+1} — Error {code}")
-                err_count += 1
-
-            prog.progress((i+1)/len(batches))
-
-        status.empty(); prog.empty()
-        st.divider()
-        if err_count == 0:
-            st.success(f"✅ Proceso completado — **{ok_count} visitas editadas**")
-        else:
-            st.warning(f"⚠️ Proceso completado con errores — **{ok_count} editadas**, {err_count} lote(s) fallido(s)")
-
-
-
-def page_eliminacion_visitas():
-    st.title("🗑️ Eliminación Masiva de Visitas")
-    st.error("⚠️ **ADVERTENCIA:** Esta operación elimina visitas directamente desde la base de datos. La eliminación es permanente y no se puede deshacer. Asegúrate de que los IDs sean correctos antes de continuar.")
-
-    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_delete")
-
-    def make_template():
-        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Visitas"
-        ws.append(["id"])
-        ws.append([838112279])
-        ws.append([838112568])
-        ws.column_dimensions["A"].width = 20
-        buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-
-    st.download_button("📥 Descargar plantilla", data=make_template(),
-                       file_name="plantilla_eliminacion_visitas.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    visits_file = st.file_uploader("📂 Sube tu Excel con IDs de visita", type=["xlsx"], key="upload_delete")
-
-    if visits_file:
-        try:
-            wb = openpyxl.load_workbook(visits_file); ws = wb.active
-            headers = [str(c.value).strip() if c.value else "" for c in ws[1]]
-            if "id" not in headers:
-                st.error("❌ El Excel debe tener una columna llamada 'id'."); return
-            idx = headers.index("id")
-            visit_ids = []
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                val = row[idx] if idx < len(row) else None
-                if val is not None:
-                    try: visit_ids.append(int(val))
-                    except: pass
-            if not visit_ids:
-                st.error("❌ No se encontraron IDs válidos."); return
-            st.info(f"📋 **{len(visit_ids)} visitas** cargadas. Se procesarán en lotes de 2,000.")
-        except Exception as e:
-            st.error(f"❌ Error leyendo el archivo: {e}"); return
-
-        st.divider()
-        confirm = st.checkbox("✅ Confirmo que quiero eliminar estas visitas de forma permanente")
-
-        if confirm and st.button("🗑️ Eliminar visitas", type="primary", disabled=not token):
-            BATCH_SIZE = 2000
-            total = len(visit_ids)
-            batches = [visit_ids[i:i+BATCH_SIZE] for i in range(0, total, BATCH_SIZE)]
-            prog = st.progress(0); status = st.empty()
-            total_deleted = 0; errors = 0
-
-            for i, batch in enumerate(batches):
-                status.info(f"Procesando lote {i+1}/{len(batches)} — eliminando {len(batch)} visitas... ({total_deleted} eliminadas hasta ahora)")
-                try:
-                    r = requests.post("http://api.simpliroute.com/v1/bulk/delete/visits/",
-                                      headers={"Authorization": f"Token {token}", "Content-Type": "application/json"},
-                                      json={"visits": batch}, timeout=300)
-                    code = r.status_code
-                except Exception as e:
-                    if "timed out" in str(e).lower() or "timeout" in str(e).lower():
-                        st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. La API tardó más de lo esperado. Es posible que las visitas hayan sido eliminadas igualmente. Se recomienda verificar antes de reintentar.")
-                    else:
-                        st.error(f"❌ Error en lote {i+1}: {e}")
-                    errors += 1
-                    prog.progress((i+1)/len(batches)); continue
-
-                if code in [200, 201, 204]:
-                    total_deleted += len(batch)
-                    st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas eliminadas")
-                elif code == 401:
-                    st.error("❌ Token inválido. Proceso detenido."); status.empty(); prog.empty(); return
-                else:
-                    st.error(f"❌ Lote {i+1} — Error {code}"); errors += 1
-
-                prog.progress((i+1)/len(batches))
-
-            status.empty(); prog.empty()
-            st.divider()
-            if errors == 0:
-                st.success(f"✅ Proceso completado — **{total_deleted} visitas eliminadas** en {len(batches)} lote(s)")
-            else:
-                st.warning(f"⚠️ Proceso completado con errores — **{total_deleted} visitas eliminadas**, {errors} lote(s) fallido(s)")
-
-
-
+# ── FEATURE: VALIDACIÓN DE GPS ────────────────────────────────────────────────
 def page_validacion_gps():
     st.title("📡 Validación de GPS")
     st.markdown("Consulta si un vehículo o conductor tiene registros de ubicación para una fecha determinada.")
     col1, col2 = st.columns(2)
     with col1: token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_gps")
-    with col2: entity_type = st.selectbox("🔍 Consultar por", ["Vehículo", "Conductor"])
+    with col2: entity_type = st.selectbox("🔍 Consultar por", ["Vehículo","Conductor"])
     col3, col4 = st.columns(2)
     with col3:
         st.caption("Pega los IDs uno por línea:\n```\n568025\n568026\n```")
@@ -858,69 +932,49 @@ def page_validacion_gps():
         param_key = "vehicle_id" if entity_type == "Vehículo" else "driver_id"
         date_str = selected_date.strftime("%Y-%m-%d")
         entity_ids = [l.strip() for l in entity_ids_raw.strip().splitlines() if l.strip()]
+        if not entity_ids: st.error("❌ No se encontraron IDs."); return
 
-        if not entity_ids:
-            st.error("❌ No se encontraron IDs."); return
-
-        con_data = []
-        sin_data = []
-        all_records = []
-
+        con_data = []; sin_data = []; all_records = []
         prog = st.progress(0); status = st.empty()
 
         for i, eid in enumerate(entity_ids):
             status.info(f"Consultando {entity_type.lower()} **{eid}** ({i+1}/{len(entity_ids)})")
             url = f"https://api-gateway.simpliroute.com/v1/tracking/locations/{date_str}/?{param_key}={eid}"
             try:
-                r = requests.get(url, headers={"Authorization": f"Token {token}"}, timeout=30)
+                r = requests.get(url, headers={"Authorization":f"Token {token}"}, timeout=30)
                 code, data = r.status_code, r.json()
             except Exception as e:
-                st.error(f"❌ **{eid}** — Error de conexión: {e}")
-                prog.progress((i+1)/len(entity_ids)); continue
-
-            if code == 401:
-                st.error("❌ Token inválido."); status.empty(); prog.empty(); return
-            elif code != 200:
-                st.error(f"❌ **{eid}** — Error {code}")
-            elif not data:
-                sin_data.append(eid)
+                st.error(f"❌ **{eid}** — Error: {e}"); prog.progress((i+1)/len(entity_ids)); continue
+            if code == 401: st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+            elif code != 200: st.error(f"❌ **{eid}** — Error {code}")
+            elif not data: sin_data.append(eid)
             else:
-                con_data.append({"id": eid, "count": len(data)})
+                con_data.append({"id":eid,"count":len(data)})
                 for rec in data:
-                    rec["entity_id"] = eid
-                    all_records.append(rec)
-
+                    rec["entity_id"] = eid; all_records.append(rec)
             prog.progress((i+1)/len(entity_ids))
 
         status.empty(); prog.empty()
         st.divider()
-
-        # Resumen
-        st.subheader("📊 Resumen")
         col_a, col_b = st.columns(2)
         with col_a:
             st.success(f"✅ Con data GPS: **{len(con_data)}**")
-            for item in con_data:
-                st.markdown(f"- ID `{item['id']}` — {item['count']} registros")
+            for item in con_data: st.markdown(f"- ID `{item['id']}` — {item['count']} registros")
         with col_b:
             st.error(f"❌ Sin data GPS: **{len(sin_data)}**")
-            for eid in sin_data:
-                st.markdown(f"- ID `{eid}`")
+            for eid in sin_data: st.markdown(f"- ID `{eid}`")
 
-        # Descarga Excel con todos los registros
         if all_records:
             def make_gps_excel(records):
-                wb = openpyxl.Workbook(); ws = wb.active; ws.title = "GPS"
+                wb=openpyxl.Workbook(); ws=wb.active; ws.title="GPS"
                 ws.append(["entity_id","timestamp","latitude","longitude","activity_type","type","id","accuracy"])
                 for rec in records:
-                    ws.append([rec.get("entity_id",""), rec.get("timestamp",""), rec.get("latitude",""),
-                               rec.get("longitude",""), rec.get("activity_type",""), rec.get("type",""),
-                               rec.get("id",""), rec.get("accuracy","")])
-                ws.column_dimensions["A"].width = 12; ws.column_dimensions["B"].width = 25
-                buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-
-            st.download_button("⬇️ Descargar Excel con todos los registros",
-                               data=make_gps_excel(all_records),
+                    ws.append([rec.get("entity_id",""),rec.get("timestamp",""),rec.get("latitude",""),
+                               rec.get("longitude",""),rec.get("activity_type",""),rec.get("type",""),
+                               rec.get("id",""),rec.get("accuracy","")])
+                ws.column_dimensions["B"].width=25
+                buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+            st.download_button("⬇️ Descargar Excel", data=make_gps_excel(all_records),
                                file_name=f"gps_{entity_type.lower()}_{date_str}.xlsx",
                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
