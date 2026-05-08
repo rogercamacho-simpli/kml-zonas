@@ -754,14 +754,15 @@ def page_analisis_gps():
     col3.metric("⚠️ Puntos anómalos", len(anomalos))
 
     if anomalos:
-        st.markdown(f"**{len(anomalos)} puntos anómalos detectados — últimos 10:**")
-        for a in anomalos[-10:]:
+        top10 = sorted(anomalos, key=lambda x: x["dist_km"], reverse=True)[:10]
+        st.markdown(f"**{len(anomalos)} puntos anómalos detectados — Top 10 por distancia:**")
+        for a in top10:
             st.error(f"⚠️ Índice {a['index']} | `{a['timestamp']}` | `{a['lat']}, {a['lon']}` | Distancia: **{a['dist_km']} km** | Velocidad implícita: **{a['velocidad_kmh']} km/h**")
 
         def make_excel_anomalos(items):
             wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Anomalos"
             ws.append(["index","timestamp","latitude","longitude","distancia_km","velocidad_kmh"])
-            for a in items:
+            for a in sorted(items, key=lambda x: x["dist_km"], reverse=True):
                 ws.append([a["index"],a["timestamp"],a["lat"],a["lon"],a["dist_km"],a["velocidad_kmh"]])
             ws.column_dimensions["B"].width = 25
             buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
