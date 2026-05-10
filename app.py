@@ -15,6 +15,7 @@ CORE_OPTIONS = [
     "🚛 Asignación de Flotas",
     "🗺️ Cargar Zonas",
     "👤 Cambiar Rol de Usuario",
+    "⚙️ Configurar Addons",
     "🔔 Crear Webhook",
     "🔓 Desbloqueo de Contraseña",
     "✏️ Edición de Visitas",
@@ -171,6 +172,170 @@ def put_user_full(token, user, new_email):
         return r.status_code, r.json()
     except Exception as e:
         return None, str(e)
+
+
+# ── MASTER LIST DE ADDONS ─────────────────────────────────────────────────────
+MASTER_ADDONS = [
+    {"key": "visit_signature",         "title": "Firma de Visita",           "description": "",                        "logo": ""},
+    {"key": "path_finder",             "title": "path_finder",               "description": "path_finder",             "logo": ""},
+    {"key": "ada",                     "title": "Ada",                       "description": "ada",                     "logo": "ada"},
+    {"key": "live_tracking",           "title": "Live Tracking",             "description": "Live Tracking",           "logo": ""},
+    {"key": "rest_time",               "title": "Tiempo de Descanso",        "description": "rest_time",               "logo": ""},
+    {"key": "mobile_route_edition",    "title": "Edición de Ruta Móvil",    "description": "Addon mobile_route_edition","logo": "-"},
+    {"key": "mobile_features",         "title": "Funciones Móviles",         "description": "Addon mobile_features",   "logo": "-"},
+    {"key": "seller_management",       "title": "Gestión de Sellers",        "description": "seller_management",       "logo": ""},
+    {"key": "territory_planner",       "title": "force field",               "description": "force field",             "logo": ""},
+    {"key": "account_configs_edition", "title": "Edición de Configuración",  "description": "account_configs_edition", "logo": ""},
+    {"key": "management_comments",     "title": "Comentarios",               "description": "comentarios",             "logo": ""},
+    {"key": "accounting",              "title": "accounting",                "description": "accounting",              "logo": ""},
+    {"key": "simpli_chat",             "title": "Simpli Chat",               "description": "SImpli Chat",             "logo": ""},
+    {"key": "zones",                   "title": "Zonas",                     "description": "Addon zones",             "logo": ""},
+]
+
+
+# ── FEATURE: CONFIGURAR ADDONS ────────────────────────────────────────────────
+def page_configurar_addons():
+    st.title("⚙️ Configurar Addons")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_addons")
+    with col2:
+        account_id_input = st.text_input("🏢 Account ID", placeholder="Ej: 41375", key="account_id_addons")
+
+    if st.button("🔍 Consultar Addons", type="primary", disabled=not (token and account_id_input)):
+        with st.spinner("Consultando addons..."):
+            try:
+                r = requests.get(
+                    "http://api.simpliroute.com/v1/addons/addons/",
+                    headers={"Authorization": f"Token {token}", "accept": "application/json"},
+                    timeout=30
+                )
+                code, resp = r.status_code, r.json()
+            except Exception as e:
+                code, resp = None, str(e)
+
+        if code == 200:
+            st.session_state["addons_data"]    = resp
+            st.session_state["addons_token"]   = token
+            st.session_state["addons_account"] = account_id_input
+            st.success(f"✅ {len(resp)} addon(s) encontrados")
+        elif code == 401:
+            st.error("❌ Token inválido")
+        else:
+            st.error(f"❌ Error {code}: {resp}")
+            st.session_state.pop("addons_data", None)
+
+    if "addons_data" in st.session_state:
+        addons        = st.session_state["addons_data"]
+        tok           = st.session_state["addons_token"]
+        acc_id        = st.session_state["addons_account"]
+        existing_keys = {a["key"] for a in addons}
+
+        st.divider()
+        st.subheader("📋 Addons de la cuenta")
+
+        for addon in addons:
+            col_name, col_estado, col_btn = st.columns([4, 1, 1])
+            # Buscar label traducido en el catálogo maestro
+            master_entry = next((m for m in MASTER_ADDONS if m["key"] == addon["key"]), None)
+            label  = master_entry["title"] if master_entry else (addon.get("title") or addon.get("key"))
+            estado = addon.get("enable", False)
+
+            with col_name:
+                st.markdown(f"**{label}** `{addon['key']}`")
+            with col_estado:
+                if estado:
+                    st.success("ON")
+                else:
+                    st.error("OFF")
+            with col_btn:
+                btn_label = "🔴 Desactivar" if estado else "🟢 Activar"
+                if st.button(btn_label, key=f"toggle_{addon['id']}"):
+                    new_val = not estado
+                    payload = [{
+                        "id":          addon["id"],
+                        "account_id":  addon["account_id"],
+                        "title":       addon.get("title", ""),
+                        "key":         addon["key"],
+                        "description": addon.get("description", ""),
+                        "logo":        addon.get("logo", ""),
+                        "value":       new_val
+                    }]
+                    try:
+                        r = requests.put(
+                            "http://api.simpliroute.com/v1/addons/addons/",
+                            headers={"Authorization": f"Token {tok}", "Content-Type": "application/json"},
+                            json=payload, timeout=15
+                        )
+                        put_code = r.status_code
+                    except Exception as e:
+                        put_code = None
+
+                    if put_code in [200, 201]:
+                        for a in st.session_state["addons_data"]:
+                            if a["id"] == addon["id"]:
+                                a["enable"] = new_val
+                        accion = "activado" if new_val else "desactivado"
+                        st.success(f"✅ **{label}** {accion}")
+                        st.rerun()
+                    elif put_code == 401:
+                        st.error("❌ Token inválido")
+                    else:
+                        st.error(f"❌ Error {put_code}")
+
+        # ── Addons faltantes ──────────────────────────────────────────────────
+        missing = [m for m in MASTER_ADDONS if m["key"] not in existing_keys]
+
+        if missing:
+            st.divider()
+            st.subheader("➕ Addons no configurados")
+            st.caption("Estos addons no están en la cuenta. Puedes agregarlos aquí.")
+
+            for master in missing:
+                col_name2, col_btn2 = st.columns([5, 1])
+                with col_name2:
+                    st.markdown(f"**{master['title']}** `{master['key']}`")
+                with col_btn2:
+                    if st.button("➕ Agregar", key=f"add_{master['key']}"):
+                        payload = {
+                            "account_id":  int(acc_id),
+                            "title":       master["title"],
+                            "key":         master["key"],
+                            "description": master["description"],
+                            "logo":        master["logo"],
+                            "value":       True
+                        }
+                        try:
+                            r = requests.post(
+                                "http://api.simpliroute.com/v1/addons/addons/",
+                                headers={"Authorization": f"Token {tok}", "Content-Type": "application/json"},
+                                json=payload, timeout=15
+                            )
+                            post_code, post_resp = r.status_code, r.json()
+                        except Exception as e:
+                            post_code, post_resp = None, str(e)
+
+                        if post_code in [200, 201]:
+                            st.success(f"✅ **{master['title']}** agregado")
+                            try:
+                                r2 = requests.get(
+                                    "http://api.simpliroute.com/v1/addons/addons/",
+                                    headers={"Authorization": f"Token {tok}", "accept": "application/json"},
+                                    timeout=15
+                                )
+                                if r2.status_code == 200:
+                                    st.session_state["addons_data"] = r2.json()
+                            except:
+                                pass
+                            st.rerun()
+                        elif post_code == 401:
+                            st.error("❌ Token inválido")
+                        else:
+                            st.error(f"❌ Error {post_code}: {post_resp}")
+        else:
+            st.divider()
+            st.info("✅ La cuenta tiene todos los addons del catálogo configurados.")
 
 
 # ── FEATURE: AGREGAR SELLER A VISITAS ────────────────────────────────────────
@@ -574,7 +739,7 @@ def page_edicion_visitas():
                 code = r.status_code
             except Exception as e:
                 if "timed out" in str(e).lower():
-                    st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. Es posible que las visitas hayan sido editadas igualmente.")
+                    st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado.")
                 else:
                     st.error(f"❌ Error en lote {i+1}: {e}")
                 err_count += 1; prog.progress((i+1)/len(batches)); continue
@@ -634,7 +799,7 @@ def page_eliminacion_visitas():
                     code = r.status_code
                 except Exception as e:
                     if "timed out" in str(e).lower():
-                        st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado. Es posible que las visitas hayan sido eliminadas igualmente. Se recomienda verificar antes de reintentar.")
+                        st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado.")
                     else:
                         st.error(f"❌ Error en lote {i+1}: {e}")
                     errors += 1; prog.progress((i+1)/len(batches)); continue
@@ -701,29 +866,20 @@ def page_iniciar_cerrar_rutas():
 def page_analisis_gps():
     st.title("📍 Análisis de Recorrido GPS")
     st.markdown("Carga un JSON de puntos GPS para analizar el recorrido, detectar anomalías y comparar contra un punto fijo.")
-
     json_file = st.file_uploader("📂 Sube tu archivo JSON", type=["json"], key="upload_gps_analysis")
-    if not json_file:
-        return
-
+    if not json_file: return
     try:
         data = json.loads(json_file.read())
         if not isinstance(data, list) or len(data) < 2:
             st.error("❌ El JSON debe ser una lista con al menos 2 puntos."); return
     except Exception as e:
         st.error(f"❌ Error leyendo el JSON: {e}"); return
-
     st.success(f"✅ {len(data)} puntos cargados")
-
-    # ── Análisis de recorrido ─────────────────────────────────────────────────
     st.divider()
     st.subheader("🛣️ Análisis de recorrido")
     st.caption("Puntos anómalos: velocidad implícita entre puntos consecutivos **> 500 km/h**.")
-
     VELOCIDAD_MAX = 500
-    total_bruto = 0; total_limpio = 0
-    anomalos = []; detalles = []
-
+    total_bruto = 0; total_limpio = 0; anomalos = []; detalles = []
     for i in range(1, len(data)):
         p1, p2 = data[i-1], data[i]
         try:
@@ -741,24 +897,20 @@ def page_analisis_gps():
             total_bruto += dist_m
             if not es_anomalo: total_limpio += dist_m
             detalles.append({"index":i,"timestamp":p2.get("timestamp","—"),"lat":lat2,"lon":lon2,
-                             "dist_m":round(dist_m,2),"velocidad_kmh":round(velocidad_kmh,1) if velocidad_kmh else None,
-                             "anomalo":es_anomalo})
+                             "dist_m":round(dist_m,2),"velocidad_kmh":round(velocidad_kmh,1) if velocidad_kmh else None,"anomalo":es_anomalo})
             if es_anomalo:
                 anomalos.append({"index":i,"timestamp":p2.get("timestamp","—"),"lat":lat2,"lon":lon2,
                                  "dist_km":round(dist_m/1000,2),"velocidad_kmh":round(velocidad_kmh,1)})
         except: continue
-
     col1,col2,col3 = st.columns(3)
     col1.metric("📏 Total bruto", f"{total_bruto/1000:.2f} km")
     col2.metric("✅ Total limpio", f"{total_limpio/1000:.2f} km")
     col3.metric("⚠️ Puntos anómalos", len(anomalos))
-
     if anomalos:
         top10 = sorted(anomalos, key=lambda x: x["dist_km"], reverse=True)[:10]
-        st.markdown(f"**{len(anomalos)} puntos anómalos detectados — Top 10 por distancia:**")
+        st.markdown(f"**{len(anomalos)} puntos anómalos — Top 10:**")
         for a in top10:
-            st.error(f"⚠️ Índice {a['index']} | `{a['timestamp']}` | `{a['lat']}, {a['lon']}` | Distancia: **{a['dist_km']} km** | Velocidad implícita: **{a['velocidad_kmh']} km/h**")
-
+            st.error(f"⚠️ Índice {a['index']} | `{a['timestamp']}` | `{a['lat']}, {a['lon']}` | {a['dist_km']} km | {a['velocidad_kmh']} km/h")
         def make_excel_anomalos(items):
             wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Anomalos"
             ws.append(["index","timestamp","latitude","longitude","distancia_km","velocidad_kmh"])
@@ -766,14 +918,10 @@ def page_analisis_gps():
                 ws.append([a["index"],a["timestamp"],a["lat"],a["lon"],a["dist_km"],a["velocidad_kmh"]])
             ws.column_dimensions["B"].width = 25
             buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-
-        st.download_button("⬇️ Descargar Excel con todos los puntos anómalos",
-                           data=make_excel_anomalos(anomalos),
-                           file_name="puntos_anomalos.xlsx",
-                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        st.download_button("⬇️ Descargar Excel anomalos", data=make_excel_anomalos(anomalos),
+                           file_name="puntos_anomalos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     else:
         st.success("✅ No se detectaron puntos anómalos.")
-
     def make_excel_analisis(detalles):
         wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Recorrido"
         ws.append(["index","timestamp","latitude","longitude","distancia_m","velocidad_kmh","anomalo"])
@@ -781,60 +929,43 @@ def page_analisis_gps():
             ws.append([d["index"],d["timestamp"],d["lat"],d["lon"],d["dist_m"],d["velocidad_kmh"],"Sí" if d["anomalo"] else "No"])
         ws.column_dimensions["B"].width = 25
         buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-
-    st.download_button("⬇️ Descargar Excel detalle de recorrido", data=make_excel_analisis(detalles),
-                       file_name="analisis_recorrido.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    # ── Comparación con punto fijo ────────────────────────────────────────────
+    st.download_button("⬇️ Descargar Excel recorrido", data=make_excel_analisis(detalles),
+                       file_name="analisis_recorrido.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     st.divider()
     st.subheader("📌 Comparación con punto fijo")
-    st.markdown("Ingresa un punto de referencia y una distancia. Se mostrarán los puntos del JSON dentro de ese radio.")
-
     col_a,col_b,col_c = st.columns(3)
-    with col_a: ref_lat = st.text_input("🌐 Latitud de referencia", placeholder="-22.797010")
-    with col_b: ref_lon = st.text_input("🌐 Longitud de referencia", placeholder="-43.323240")
-    with col_c: radio_m = st.number_input("📏 Distancia mínima (metros)", min_value=1, value=500, step=50,
-                                           help="Puntos dentro de este radio serán considerados cercanos al punto de referencia")
-
+    with col_a: ref_lat = st.text_input("🌐 Latitud", placeholder="-22.797010")
+    with col_b: ref_lon = st.text_input("🌐 Longitud", placeholder="-43.323240")
+    with col_c: radio_m = st.number_input("📏 Radio (metros)", min_value=1, value=500, step=50)
     if st.button("🔍 Comparar puntos", type="primary", disabled=not (ref_lat and ref_lon)):
         try: rlat, rlon = float(ref_lat), float(ref_lon)
-        except: st.error("❌ Latitud o longitud inválida."); return
-
+        except: st.error("❌ Coordenadas inválidas."); return
         dentro = []; fuera = 0
         for i, p in enumerate(data):
             try:
                 plat, plon = float(p["latitude"]), float(p["longitude"])
                 dist = haversine_m(rlat, rlon, plat, plon)
-                if dist <= radio_m:
-                    dentro.append({"index":i,"timestamp":p.get("timestamp","—"),"lat":plat,"lon":plon,"dist_m":round(dist,1)})
-                else:
-                    fuera += 1
+                if dist <= radio_m: dentro.append({"index":i,"timestamp":p.get("timestamp","—"),"lat":plat,"lon":plon,"dist_m":round(dist,1)})
+                else: fuera += 1
             except: continue
-
         col_x,col_y = st.columns(2)
-        col_x.metric(f"✅ Dentro del radio ({radio_m}m)", len(dentro))
-        col_y.metric("❌ Fuera del radio", fuera)
-
+        col_x.metric(f"✅ Dentro ({radio_m}m)", len(dentro))
+        col_y.metric("❌ Fuera", fuera)
         if dentro:
-            with st.expander(f"Ver {len(dentro)} puntos dentro del radio"):
+            with st.expander(f"Ver {len(dentro)} puntos"):
                 for p in dentro[:50]:
                     st.markdown(f"- Índice `{p['index']}` | `{p['timestamp']}` | `{p['lat']}, {p['lon']}` | **{p['dist_m']} m**")
                 if len(dentro) > 50: st.caption(f"... y {len(dentro)-50} más.")
-
             def make_excel_radio(puntos):
                 wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Puntos cercanos"
                 ws.append(["index","timestamp","latitude","longitude","distancia_al_punto_m"])
-                for p in puntos:
-                    ws.append([p["index"],p["timestamp"],p["lat"],p["lon"],p["dist_m"]])
+                for p in puntos: ws.append([p["index"],p["timestamp"],p["lat"],p["lon"],p["dist_m"]])
                 ws.column_dimensions["B"].width = 25
                 buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-
-            st.download_button("⬇️ Descargar Excel puntos dentro del radio", data=make_excel_radio(dentro),
-                               file_name=f"puntos_dentro_{radio_m}m.xlsx",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("⬇️ Descargar Excel", data=make_excel_radio(dentro),
+                               file_name=f"puntos_dentro_{radio_m}m.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else:
-            st.info(f"ℹ️ Ningún punto está dentro del radio de {radio_m} metros.")
+            st.info(f"ℹ️ Ningún punto dentro de {radio_m} metros.")
 
 
 # ── FEATURE: REENVIAR WEBHOOKS ────────────────────────────────────────────────
@@ -933,30 +1064,22 @@ def page_visit_types_skills():
 def page_validacion_gps():
     st.title("📡 Validación de GPS")
     st.markdown("Consulta si un vehículo o conductor tiene registros de ubicación para una fecha determinada.")
-
     col1, col2 = st.columns(2)
     with col1: token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_gps")
     with col2: selected_date = st.date_input("📅 Fecha", value=date.today(), key="gps_date")
-
     date_str = selected_date.strftime("%Y-%m-%d")
-
     modo = st.radio("🔍 Modo de consulta", ["Por tipo (Vehículo o Conductor)", "Por par (Driver + Vehículo)"], horizontal=True)
-
     st.divider()
-
     if modo == "Por tipo (Vehículo o Conductor)":
         entity_type = st.selectbox("Consultar por", ["Vehículo", "Conductor"])
         st.caption("Pega los IDs uno por línea:\n```\n568025\n568026\n```")
         entity_ids_raw = st.text_area("IDs", placeholder="568025\n568026", height=150, label_visibility="collapsed", key="single_ids")
-
         if st.button("🔍 Consultar GPS", type="primary", disabled=not (token and entity_ids_raw)):
             param_key = "vehicle_id" if entity_type == "Vehículo" else "driver_id"
             entity_ids = [l.strip() for l in entity_ids_raw.strip().splitlines() if l.strip()]
             if not entity_ids: st.error("❌ No se encontraron IDs."); return
-
             con_data = []; sin_data = []; all_records = []
             prog = st.progress(0); status = st.empty()
-
             for i, eid in enumerate(entity_ids):
                 status.info(f"Consultando {entity_type.lower()} **{eid}** ({i+1}/{len(entity_ids)})")
                 url = f"https://api-gateway.simpliroute.com/v1/tracking/locations/{date_str}/?{param_key}={eid}"
@@ -970,10 +1093,8 @@ def page_validacion_gps():
                 elif not data: sin_data.append(eid)
                 else:
                     con_data.append({"id": eid, "count": len(data)})
-                    for rec in data:
-                        rec["entity_id"] = eid; all_records.append(rec)
+                    for rec in data: rec["entity_id"] = eid; all_records.append(rec)
                 prog.progress((i+1)/len(entity_ids))
-
             status.empty(); prog.empty()
             st.divider()
             col_a, col_b = st.columns(2)
@@ -983,7 +1104,6 @@ def page_validacion_gps():
             with col_b:
                 st.error(f"❌ Sin data GPS: **{len(sin_data)}**")
                 for eid in sin_data: st.markdown(f"- ID `{eid}`")
-
             if all_records:
                 def make_excel_single(records):
                     wb=openpyxl.Workbook(); ws=wb.active; ws.title="GPS"
@@ -1001,11 +1121,8 @@ def page_validacion_gps():
                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 with col_dl2:
                     st.download_button("⬇️ Descargar JSON", data=json.dumps(all_records, ensure_ascii=False, indent=2),
-                                       file_name=f"gps_{entity_type.lower()}_{date_str}.json",
-                                       mime="application/json")
-
-    else:  # Por par
-    
+                                       file_name=f"gps_{entity_type.lower()}_{date_str}.json", mime="application/json")
+    else:
         col3, col4 = st.columns(2)
         with col3:
             st.caption("ID de conductor:")
@@ -1013,16 +1130,13 @@ def page_validacion_gps():
         with col4:
             st.caption("ID de vehículo:")
             vehicle_ids_raw = st.text_area("Vehicle IDs", placeholder="674797", height=80, label_visibility="collapsed", key="vehicle_ids")
-
         if st.button("🔍 Consultar GPS", type="primary", disabled=not (token and driver_ids_raw and vehicle_ids_raw), key="btn_gps_pair"):
             driver_ids = [l.strip() for l in driver_ids_raw.strip().splitlines() if l.strip()]
             vehicle_ids = [l.strip() for l in vehicle_ids_raw.strip().splitlines() if l.strip()]
             if len(driver_ids) != len(vehicle_ids):
-                st.error(f"❌ Cantidad de IDs no coincide: {len(driver_ids)} conductores vs {len(vehicle_ids)} vehículos."); return
-
+                st.error(f"❌ Cantidad no coincide: {len(driver_ids)} conductores vs {len(vehicle_ids)} vehículos."); return
             con_data = []; sin_data = []; all_records = []
             prog = st.progress(0); status = st.empty()
-
             for i, (did, vid) in enumerate(zip(driver_ids, vehicle_ids)):
                 status.info(f"Consultando conductor **{did}** / vehículo **{vid}** ({i+1}/{len(driver_ids)})")
                 url = f"https://api-gateway.simpliroute.com/v1/tracking/locations/{date_str}/?driver_id={did}&vehicle_id={vid}"
@@ -1036,12 +1150,9 @@ def page_validacion_gps():
                 elif not data: sin_data.append(f"Driver {did} / Vehículo {vid}")
                 else:
                     con_data.append({"driver": did, "vehicle": vid, "count": len(data)})
-                    for rec in data:
-                        rec["driver_id"] = did; rec["vehicle_id"] = vid; all_records.append(rec)
+                    for rec in data: rec["driver_id"] = did; rec["vehicle_id"] = vid; all_records.append(rec)
                 prog.progress((i+1)/len(driver_ids))
-
             status.empty(); prog.empty()
-            st.divider()
             col_a, col_b = st.columns(2)
             with col_a:
                 st.success(f"✅ Con data GPS: **{len(con_data)}**")
@@ -1049,7 +1160,6 @@ def page_validacion_gps():
             with col_b:
                 st.error(f"❌ Sin data GPS: **{len(sin_data)}**")
                 for pair in sin_data: st.markdown(f"- {pair}")
-
             if all_records:
                 def make_excel_pair(records):
                     wb=openpyxl.Workbook(); ws=wb.active; ws.title="GPS"
@@ -1063,12 +1173,10 @@ def page_validacion_gps():
                 col_dl3, col_dl4 = st.columns(2)
                 with col_dl3:
                     st.download_button("⬇️ Descargar Excel", data=make_excel_pair(all_records),
-                                       file_name=f"gps_pares_{date_str}.xlsx",
-                                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                                       file_name=f"gps_pares_{date_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 with col_dl4:
                     st.download_button("⬇️ Descargar JSON", data=json.dumps(all_records, ensure_ascii=False, indent=2),
-                                       file_name=f"gps_pares_{date_str}.json",
-                                       mime="application/json")
+                                       file_name=f"gps_pares_{date_str}.json", mime="application/json")
 
 
 # ── TMS: TIPOS DE DOCUMENTO ───────────────────────────────────────────────────
@@ -1146,18 +1254,19 @@ def page_tms_transportistas():
 
 
 # ── ROUTER ────────────────────────────────────────────────────────────────────
-if selected == "🧑‍💼 Agregar Seller a Visitas": page_agregar_seller()
-elif selected == "🚛 Asignación de Flotas": page_asignacion_flotas()
-elif selected == "🗺️ Cargar Zonas": page_cargar_zonas()
-elif selected == "👤 Cambiar Rol de Usuario": page_cambiar_rol()
-elif selected == "🔔 Crear Webhook": page_crear_webhook()
-elif selected == "🔓 Desbloqueo de Contraseña": page_desbloqueo()
-elif selected == "✏️ Edición de Visitas": page_edicion_visitas()
+if selected == "🧑‍💼 Agregar Seller a Visitas":     page_agregar_seller()
+elif selected == "🚛 Asignación de Flotas":          page_asignacion_flotas()
+elif selected == "🗺️ Cargar Zonas":                  page_cargar_zonas()
+elif selected == "👤 Cambiar Rol de Usuario":         page_cambiar_rol()
+elif selected == "⚙️ Configurar Addons":             page_configurar_addons()
+elif selected == "🔔 Crear Webhook":                 page_crear_webhook()
+elif selected == "🔓 Desbloqueo de Contraseña":      page_desbloqueo()
+elif selected == "✏️ Edición de Visitas":            page_edicion_visitas()
 elif selected == "🗑️ Eliminación Masiva de Visitas": page_eliminacion_visitas()
-elif selected == "🚦 Iniciar / Cerrar Rutas": page_iniciar_cerrar_rutas()
-elif selected == "📍 Análisis de Recorrido GPS": page_analisis_gps()
-elif selected == "🔁 Reenviar Webhooks": page_reenviar_webhooks()
-elif selected == "🏷️ Tipos de Visita y Skills": page_visit_types_skills()
-elif selected == "📡 Validación de GPS": page_validacion_gps()
-elif selected == "📄 Tipos de Documento": page_tms_document_types()
-elif selected == "🚚 Transportistas": page_tms_transportistas()
+elif selected == "🚦 Iniciar / Cerrar Rutas":        page_iniciar_cerrar_rutas()
+elif selected == "📍 Análisis de Recorrido GPS":     page_analisis_gps()
+elif selected == "🔁 Reenviar Webhooks":             page_reenviar_webhooks()
+elif selected == "🏷️ Tipos de Visita y Skills":      page_visit_types_skills()
+elif selected == "📡 Validación de GPS":             page_validacion_gps()
+elif selected == "📄 Tipos de Documento":            page_tms_document_types()
+elif selected == "🚚 Transportistas":                page_tms_transportistas()
