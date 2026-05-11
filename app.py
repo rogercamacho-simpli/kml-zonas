@@ -1221,7 +1221,7 @@ def page_tms_document_types():
         ws.append(["name","entity_type"]); ws.append(["DNI","driver"]); ws.append(["RUC","provider"])
         ws.column_dimensions["A"].width=25; ws.column_dimensions["B"].width=25
         buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Plantilla", data=tpl(), file_name="plantilla_tipos_documento.xlsx",
+    st.download_button("📥 Descargar plantilla", data=tpl(), file_name="plantilla_tipos_documento.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     doc_file = st.file_uploader("📂 Excel", type=["xlsx"], key="upload_doctype")
     if doc_file:
@@ -1257,7 +1257,7 @@ def page_tms_transportistas():
         ws.append(["Transportes Sur S.A.","Transportes Sur Sociedad Anónima","20123456789"])
         ws.column_dimensions["A"].width=30; ws.column_dimensions["B"].width=35; ws.column_dimensions["C"].width=20
         buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Plantilla", data=tpl(), file_name="plantilla_transportistas.xlsx",
+    st.download_button("📥 Descargar plantilla", data=tpl(), file_name="plantilla_transportistas.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     tf = st.file_uploader("📂 Excel", type=["xlsx"], key="upload_transp")
     if tf:
