@@ -202,21 +202,16 @@ MASTER_ADDONS = [
 # ── FEATURE: CONFIGURAR ADDONS ────────────────────────────────────────────────
 def page_configurar_addons():
     st.title("⚙️ Configurar Addons")
-
     token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_addons")
 
     if st.button("🔍 Consultar Addons", type="primary", disabled=not token):
         with st.spinner("Consultando addons..."):
             try:
-                r = requests.get(
-                    "http://api.simpliroute.com/v1/addons/addons/",
-                    headers={"Authorization": f"Token {token}", "accept": "application/json"},
-                    timeout=30
-                )
+                r = requests.get("http://api.simpliroute.com/v1/addons/addons/",
+                                 headers={"Authorization": f"Token {token}", "accept": "application/json"}, timeout=30)
                 code, resp = r.status_code, r.json()
             except Exception as e:
                 code, resp = None, str(e)
-
         if code == 200:
             acc_id = resp[0]["account_id"] if resp else "—"
             st.session_state["addons_data"]    = resp
@@ -238,7 +233,6 @@ def page_configurar_addons():
         st.divider()
         st.subheader("📋 Addons de la cuenta")
 
-        # ── Cards en 3 columnas ───────────────────────────────────────────────
         cols = st.columns(3)
         for idx, addon in enumerate(addons):
             master_entry = next((m for m in MASTER_ADDONS if m["key"] == addon["key"]), None)
@@ -254,117 +248,72 @@ def page_configurar_addons():
             with cols[idx % 3]:
                 st.markdown(
                     f"""
-                    <div style="
-                        border: 1.5px solid {color_borde};
-                        border-radius: 10px;
-                        padding: 14px 16px 8px 16px;
-                        margin-bottom: 12px;
-                        background: #ffffff;
-                    ">
-                        <div style="font-size:14px; font-weight:600; color:#1a1a1a; margin-bottom:4px;">{label}</div>
-                        <div style="font-size:11px; font-family:monospace; background:{badge_bg}; color:{status_color}; display:inline-block; padding:1px 7px; border-radius:4px; margin-bottom:8px;">{addon['key']}</div>
-                        <div style="font-size:13px; color:{status_color}; font-weight:500;">{estado_txt}</div>
+                    <div style="border:1.5px solid {color_borde};border-radius:10px;padding:14px 16px 8px 16px;margin-bottom:12px;background:#ffffff;">
+                        <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">{label}</div>
+                        <div style="font-size:11px;font-family:monospace;background:{badge_bg};color:{status_color};display:inline-block;padding:1px 7px;border-radius:4px;margin-bottom:8px;">{addon['key']}</div>
+                        <div style="font-size:13px;color:{status_color};font-weight:500;">{estado_txt}</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                    """, unsafe_allow_html=True)
                 if st.button(btn_label, key=f"toggle_{addon['id']}", use_container_width=True):
                     new_val = not estado
-                    payload = [{
-                        "id":          addon["id"],
-                        "account_id":  addon["account_id"],
-                        "title":       addon.get("title", ""),
-                        "key":         addon["key"],
-                        "description": addon.get("description", ""),
-                        "logo":        addon.get("logo", ""),
-                        "value":       new_val
-                    }]
+                    payload = [{"id": addon["id"], "account_id": addon["account_id"], "title": addon.get("title",""),
+                                "key": addon["key"], "description": addon.get("description",""),
+                                "logo": addon.get("logo",""), "value": new_val}]
                     try:
-                        r = requests.put(
-                            "http://api.simpliroute.com/v1/addons/addons/",
-                            headers={"Authorization": f"Token {tok}", "Content-Type": "application/json"},
-                            json=payload, timeout=15
-                        )
+                        r = requests.put("http://api.simpliroute.com/v1/addons/addons/",
+                                         headers={"Authorization": f"Token {tok}", "Content-Type": "application/json"},
+                                         json=payload, timeout=15)
                         put_code = r.status_code
                     except:
                         put_code = None
-
                     if put_code in [200, 201]:
                         for a in st.session_state["addons_data"]:
-                            if a["id"] == addon["id"]:
-                                a["enable"] = new_val
+                            if a["id"] == addon["id"]: a["enable"] = new_val
                         st.rerun()
-                    elif put_code == 401:
-                        st.error("❌ Token inválido")
-                    else:
-                        st.error(f"❌ Error {put_code}")
+                    elif put_code == 401: st.error("❌ Token inválido")
+                    else: st.error(f"❌ Error {put_code}")
 
-        # ── Addons faltantes ──────────────────────────────────────────────────
         missing = [m for m in MASTER_ADDONS if m["key"] not in existing_keys]
-
         if missing:
             st.divider()
             st.subheader("➕ Addons no configurados")
             st.caption("Estos addons no están en la cuenta. Puedes agregarlos aquí.")
-            staff_tok_input = st.text_input("🔐 Token Staff *(requerido para agregar addons)*", type="password", key="staff_token_addons", placeholder="Token de usuario Staff")
+            staff_tok_input = st.text_input("🔐 Token Staff *(requerido para agregar addons)*", type="password",
+                                            key="staff_token_addons", placeholder="Token de usuario Staff")
             cols2 = st.columns(3)
             for idx2, master in enumerate(missing):
                 with cols2[idx2 % 3]:
                     st.markdown(
                         f"""
-                        <div style="
-                            border: 1.5px dashed #ccc;
-                            border-radius: 10px;
-                            padding: 14px 16px 8px 16px;
-                            margin-bottom: 12px;
-                            background: #fafafa;
-                        ">
-                            <div style="font-size:14px; font-weight:600; color:#555; margin-bottom:4px;">{master['title']}</div>
-                            <div style="font-size:11px; font-family:monospace; background:#f0f0f0; color:#888; display:inline-block; padding:1px 7px; border-radius:4px; margin-bottom:8px;">{master['key']}</div>
-                            <div style="font-size:12px; color:#aaa;">No configurado</div>
+                        <div style="border:1.5px dashed #ccc;border-radius:10px;padding:14px 16px 8px 16px;margin-bottom:12px;background:#fafafa;">
+                            <div style="font-size:14px;font-weight:600;color:#555;margin-bottom:4px;">{master['title']}</div>
+                            <div style="font-size:11px;font-family:monospace;background:#f0f0f0;color:#888;display:inline-block;padding:1px 7px;border-radius:4px;margin-bottom:8px;">{master['key']}</div>
+                            <div style="font-size:12px;color:#aaa;">No configurado</div>
                         </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                        """, unsafe_allow_html=True)
                     if st.button("➕ Agregar", key=f"add_{master['key']}", use_container_width=True):
-                        payload = {
-                            "account_id":  int(acc_id),
-                            "title":       master["title"],
-                            "key":         master["key"],
-                            "description": master["description"],
-                            "logo":        master["logo"],
-                            "value":       True
-                        }
                         use_tok = staff_tok_input.strip() if staff_tok_input and staff_tok_input.strip() else tok
+                        payload = {"account_id": int(acc_id), "title": master["title"], "key": master["key"],
+                                   "description": master["description"], "logo": master["logo"], "value": True}
                         try:
-                            r = requests.post(
-                                "http://api.simpliroute.com/v1/addons/addons/",
-                                headers={"Authorization": f"Token {use_tok}", "Content-Type": "application/json"},
-                                json=payload, timeout=15
-                            )
+                            r = requests.post("http://api.simpliroute.com/v1/addons/addons/",
+                                              headers={"Authorization": f"Token {use_tok}", "Content-Type": "application/json"},
+                                              json=payload, timeout=15)
                             post_code, post_resp = r.status_code, r.json()
                         except Exception as e:
                             post_code, post_resp = None, str(e)
-
                         if post_code in [200, 201]:
                             st.success(f"✅ **{master['title']}** agregado")
                             try:
-                                r2 = requests.get(
-                                    "http://api.simpliroute.com/v1/addons/addons/",
-                                    headers={"Authorization": f"Token {tok}", "accept": "application/json"},
-                                    timeout=15
-                                )
-                                if r2.status_code == 200:
-                                    st.session_state["addons_data"] = r2.json()
-                            except:
-                                pass
+                                r2 = requests.get("http://api.simpliroute.com/v1/addons/addons/",
+                                                  headers={"Authorization": f"Token {tok}", "accept": "application/json"}, timeout=15)
+                                if r2.status_code == 200: st.session_state["addons_data"] = r2.json()
+                            except: pass
                             st.rerun()
                         elif post_code == 403:
                             st.error("❌ Error 403 — Esta acción solo puede realizarla un usuario Staff. Ingresa tu token de Staff en el campo de arriba.")
-                        elif post_code == 401:
-                            st.error("❌ Token inválido")
-                        else:
-                            st.error(f"❌ Error {post_code}: {post_resp}")
+                        elif post_code == 401: st.error("❌ Token inválido")
+                        else: st.error(f"❌ Error {post_code}: {post_resp}")
         else:
             st.divider()
             st.info("✅ La cuenta tiene todos los addons del catálogo configurados.")
@@ -418,13 +367,12 @@ def page_agregar_seller():
                                        headers={"Authorization": f"Token {st.session_state['seller_token']}", "Content-Type": "application/json"},
                                        json=[{"id": vid, "seller": seller_uuid} for vid in ids], timeout=120)
                     code = r.status_code
-                except:
-                    code = None
+                except: code = None
             if code in [200,201]: st.success(f"✅ Seller asignado a {len(ids)} visitas")
             else: st.error(f"❌ Error {code}")
 
 
-# ── FEATURE: FLOTAS ──────────────────────────────────────────────────────────
+# ── FEATURE: FLOTAS ───────────────────────────────────────────────────────────
 def page_flotas():
     st.title("🚛 Flotas")
     tab1, tab2 = st.tabs(["📋 Asignar Flotas", "🗑️ Eliminar Flotas"])
@@ -483,8 +431,7 @@ def page_flotas():
                                          headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
                                          json={"id":fleet["id"],"name":fname,"vehicles":vids,"users":uids}, timeout=300)
                         code = r.status_code
-                    except:
-                        code = None
+                    except: code = None
                     if code == 200: st.success(f"✅ **{fname}** — Actualizada ({len(vids)} vehículos · {len(uids)} usuarios)")
                     else: st.error(f"❌ **{fname}** — Error {code}")
         elif fleet_file and not token:
@@ -494,7 +441,8 @@ def page_flotas():
         st.error("⚠️ **ADVERTENCIA:** La eliminación de flotas es permanente y no se puede deshacer.")
         token_del = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_flotas_del")
         st.caption("Pega los IDs de flota uno por línea:\n```\n47524\n47525\n```")
-        fleet_ids_raw = st.text_area("IDs de flota", placeholder="47524\n47525", height=180, label_visibility="collapsed", key="fleet_ids_del")
+        fleet_ids_raw = st.text_area("IDs de flota", placeholder="47524\n47525", height=180,
+                                     label_visibility="collapsed", key="fleet_ids_del")
         confirm_del = st.checkbox("✅ Confirmo que quiero eliminar estas flotas de forma permanente", key="confirm_flotas_del")
         if st.button("🗑️ Eliminar Flotas", type="primary", disabled=not (token_del and fleet_ids_raw and confirm_del)):
             fleet_ids = []
@@ -515,7 +463,7 @@ def page_flotas():
                 except Exception as e:
                     st.error(f"❌ **{fid}** — Error: {e}"); err_count += 1; prog.progress((i+1)/len(fleet_ids)); continue
                 if code in [200, 204]: st.success(f"✅ Flota **{fid}** eliminada"); ok_count += 1
-                elif code == 401: st.error(f"❌ Token inválido."); status.empty(); prog.empty(); return
+                elif code == 401: st.error("❌ Token inválido."); status.empty(); prog.empty(); return
                 elif code == 404: st.warning(f"⚠️ **{fid}** — No encontrada")
                 else: st.error(f"❌ **{fid}** — Error {code}"); err_count += 1
                 prog.progress((i+1)/len(fleet_ids))
@@ -525,7 +473,7 @@ def page_flotas():
             else: st.warning(f"⚠️ Completado con errores — **{ok_count} eliminadas**, {err_count} con error")
 
 
-# ── FEATURE: ZONAS ───────────────────────────────────────────────────────────
+# ── FEATURE: ZONAS ────────────────────────────────────────────────────────────
 def page_zonas():
     st.title("🗺️ Zonas")
     tab1, tab2 = st.tabs(["📂 Cargar Zonas", "🗑️ Eliminar Zonas"])
@@ -558,8 +506,7 @@ def page_zonas():
                                           headers={"authorization":f"Token {token}","content-type":"application/json"},
                                           json={"name":p["name"],"coordinates":coords_to_str(p["coords"]),"vehicles":[]}, timeout=15)
                         code = r.status_code
-                    except:
-                        code = None
+                    except: code = None
                     if code in [200,201]: st.success(f"✅ {p['name']}")
                     elif code == 400: st.warning(f"⚠️ {p['name']} — Ya existe")
                     elif code == 401: st.error(f"❌ {p['name']} — Token inválido")
@@ -571,7 +518,8 @@ def page_zonas():
         st.error("⚠️ **ADVERTENCIA:** La eliminación de zonas es permanente y no se puede deshacer.")
         token_del = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas_del")
         st.caption("Pega los IDs de zona uno por línea:\n```\n12345\n12346\n```")
-        zone_ids_raw = st.text_area("IDs de zona", placeholder="12345\n12346", height=180, label_visibility="collapsed", key="zone_ids_del")
+        zone_ids_raw = st.text_area("IDs de zona", placeholder="12345\n12346", height=180,
+                                    label_visibility="collapsed", key="zone_ids_del")
         confirm_del = st.checkbox("✅ Confirmo que quiero eliminar estas zonas de forma permanente", key="confirm_zonas_del")
         if st.button("🗑️ Eliminar Zonas", type="primary", disabled=not (token_del and zone_ids_raw and confirm_del)):
             zone_ids = []
@@ -653,8 +601,7 @@ def page_cambiar_rol():
                                      headers={"Authorization":f"Token {st.session_state['user_token']}","Content-Type":"application/json"},
                                      json=payload, timeout=15)
                     code = r.status_code
-                except:
-                    code = None
+                except: code = None
                 if code == 200:
                     st.success(f"✅ Rol actualizado a **{nuevo_label}**")
                     try:
@@ -774,8 +721,7 @@ def page_desbloqueo():
                                       headers={"Content-Type":"application/json;charset=UTF-8","authorization":"null"},
                                       json={"username": selected_user.get("username")}, timeout=30)
                     code2 = r.status_code
-                except:
-                    code2 = None
+                except: code2 = None
                 prog.progress(100); status.empty(); prog.empty()
                 if code2 in [200,201]:
                     st.success(f"✅ Link enviado a **{recovery_email}** ({agent_name})")
@@ -844,10 +790,8 @@ def page_edicion_visitas():
                                    json=[build_payload(vid) for vid in batch], timeout=300)
                 code = r.status_code
             except Exception as e:
-                if "timed out" in str(e).lower():
-                    st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado.")
-                else:
-                    st.error(f"❌ Error en lote {i+1}: {e}")
+                if "timed out" in str(e).lower(): st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado.")
+                else: st.error(f"❌ Error en lote {i+1}: {e}")
                 err_count += 1; prog.progress((i+1)/len(batches)); continue
             if code in [200,201]:
                 ok_count += len(batch); st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas editadas")
@@ -904,10 +848,8 @@ def page_eliminacion_visitas():
                                       json={"visits": batch}, timeout=300)
                     code = r.status_code
                 except Exception as e:
-                    if "timed out" in str(e).lower():
-                        st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado.")
-                    else:
-                        st.error(f"❌ Error en lote {i+1}: {e}")
+                    if "timed out" in str(e).lower(): st.warning(f"⏱️ **Lote {i+1}** — Tiempo de espera agotado.")
+                    else: st.error(f"❌ Error en lote {i+1}: {e}")
                     errors += 1; prog.progress((i+1)/len(batches)); continue
                 if code in [200,201,204]:
                     total_deleted += len(batch); st.success(f"✅ Lote {i+1}/{len(batches)} — {len(batch)} visitas eliminadas")
