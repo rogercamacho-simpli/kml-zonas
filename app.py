@@ -595,14 +595,24 @@ def page_permisos_usuario():
     st.title("🔍 Permisos de Usuario")
     st.markdown("Consulta el rol y permisos de un usuario, incluyendo roles personalizados.")
 
-    col1, col2, col3 = st.columns(3)
-    with col1: token      = st.text_input("🔑 Token", type="password", key="token_permisos")
-    with col2: account_id = st.text_input("🏢 Account ID", placeholder="Ej: 96737", key="account_permisos")
-    with col3: user_id    = st.text_input("🆔 User ID", placeholder="Ej: 503734", key="user_permisos")
+    col1, col2 = st.columns(2)
+    with col1: token   = st.text_input("🔑 Token", type="password", key="token_permisos")
+    with col2: user_id = st.text_input("🆔 User ID", placeholder="Ej: 503734", key="user_permisos")
 
-    if st.button("🔍 Consultar", type="primary", disabled=not (token and account_id and user_id)):
-        # 1. Obtener usuario
-        with st.spinner("Consultando usuario..."):
+    if st.button("🔍 Consultar", type="primary", disabled=not (token and user_id)):
+        # 1. Validar token y obtener account_id
+        with st.spinner("Validando token..."):
+            try:
+                rv = requests.get(f"http://api.simpliroute.com/v1/accounts/api-token/{token.strip()}/validate/",
+                                  headers={"Content-Type": "application/json"}, timeout=15)
+                vcode, vresp = rv.status_code, rv.json()
+            except Exception as e:
+                st.error(f"❌ Error validando token: {e}"); return
+        if vcode != 200 or not vresp.get("isvalid"):
+            st.error("❌ Token inválido"); return
+        account_id = vresp.get("account_id")
+        if not account_id:
+            st.error("❌ No se pudo obtener el Account ID del token"); return
             try:
                 r = requests.get(f"http://api.simpliroute.com/v1/accounts/users/{user_id.strip()}/",
                                  headers={"Authorization": f"Token {token}"}, timeout=15)
@@ -621,7 +631,7 @@ def page_permisos_usuario():
         c3.markdown(f"**Estado**<br>{estado}", unsafe_allow_html=True)
         st.caption(f"📧 {user.get('email') or 'Sin email'} · ID: {user.get('id')}")
 
-        # 2. Obtener roles de la cuenta
+        # 3. Obtener roles de la cuenta
         with st.spinner("Consultando roles de la cuenta..."):
             try:
                 r2 = requests.get(f"https://api-gateway.simpliroute.com/v1/accounts/{account_id.strip()}/roles/",
