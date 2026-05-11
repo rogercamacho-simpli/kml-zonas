@@ -10,29 +10,37 @@ from datetime import date, datetime
 st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wide")
 
 # ── NAVEGACIÓN ────────────────────────────────────────────────────────────────
-CORE_OPTIONS = [
-    "🧑‍💼 Agregar Seller a Visitas",
-    "📍 Análisis de Recorrido GPS",
-    "👤 Cambiar Rol de Usuario",
-    "⚙️ Configurar Addons",
-    "🔔 Crear Webhook",
-    "🔓 Desbloqueo de Contraseña",
-    "✏️ Edición de Visitas",
-    "🗑️ Eliminación Masiva de Visitas",
-    "🚛 Flotas",
-    "🚦 Iniciar / Cerrar Rutas",
-    "🔁 Reenviar Webhooks",
-    "🏷️ Tipos de Visita y Skills",
-    "📡 Validación de GPS",
-    "🗺️ Zonas",
-]
-TMS_OPTIONS = [
-    "📄 Tipos de Documento",
-    "🚚 Transportistas",
+MENU_GROUPS = [
+    ("📋 Visitas", [
+        "🧑‍💼 Agregar Seller a Visitas",
+        "✏️ Edición de Visitas",
+        "🗑️ Eliminación Masiva de Visitas",
+        "🏷️ Tipos de Visita y Skills",
+    ]),
+    ("🚗 Rutas & Flotas", [
+        "🚛 Flotas",
+        "🚦 Iniciar / Cerrar Rutas",
+        "🗺️ Zonas",
+    ]),
+    ("📡 GPS", [
+        "📍 Análisis de Recorrido GPS",
+        "📡 Validación de GPS",
+    ]),
+    ("⚙️ Configuración", [
+        "👤 Cambiar Rol de Usuario",
+        "⚙️ Configurar Addons",
+        "🔔 Crear Webhook",
+        "🔓 Desbloqueo de Contraseña",
+        "🔁 Reenviar Webhooks",
+    ]),
+    ("📦 TMS", [
+        "📄 Tipos de Documento",
+        "🚚 Transportistas",
+    ]),
 ]
 
 if "current_page" not in st.session_state:
-    st.session_state["current_page"] = CORE_OPTIONS[0]
+    st.session_state["current_page"] = MENU_GROUPS[0][1][0]
 
 def nav_item(label):
     is_active = st.session_state["current_page"] == label
@@ -47,13 +55,11 @@ def nav_item(label):
 with st.sidebar:
     st.markdown("## 🚀 SimpliRoute Tools")
     st.markdown("---")
-    st.markdown("### 🛠️ SimpliRoute Core")
-    for item in CORE_OPTIONS:
-        nav_item(item)
-    st.markdown("---")
-    st.markdown("### 📦 TMS")
-    for item in TMS_OPTIONS:
-        nav_item(item)
+    for group_name, items in MENU_GROUPS:
+        is_group_active = selected in items
+        with st.expander(group_name, expanded=is_group_active):
+            for item in items:
+                nav_item(item)
     st.markdown("---")
     st.link_button("🔧 Tools Julio", "https://simpliroute-tools.streamlit.app/", use_container_width=True)
     st.markdown("---")
