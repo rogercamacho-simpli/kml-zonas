@@ -176,20 +176,23 @@ def put_user_full(token, user, new_email):
 
 # ── MASTER LIST DE ADDONS ─────────────────────────────────────────────────────
 MASTER_ADDONS = [
-    {"key": "visit_signature",         "title": "Firma de Visita",           "description": "",                        "logo": ""},
-    {"key": "path_finder",             "title": "path_finder",               "description": "path_finder",             "logo": ""},
-    {"key": "ada",                     "title": "Ada",                       "description": "ada",                     "logo": "ada"},
-    {"key": "live_tracking",           "title": "Live Tracking",             "description": "Live Tracking",           "logo": ""},
-    {"key": "rest_time",               "title": "Tiempo de Descanso",        "description": "rest_time",               "logo": ""},
-    {"key": "mobile_route_edition",    "title": "Edición de Ruta Móvil",    "description": "Addon mobile_route_edition","logo": "-"},
-    {"key": "mobile_features",         "title": "Funciones Móviles",         "description": "Addon mobile_features",   "logo": "-"},
-    {"key": "seller_management",       "title": "Gestión de Sellers",        "description": "seller_management",       "logo": ""},
-    {"key": "territory_planner",       "title": "force field",               "description": "force field",             "logo": ""},
-    {"key": "account_configs_edition", "title": "Edición de Configuración",  "description": "account_configs_edition", "logo": ""},
-    {"key": "management_comments",     "title": "Comentarios",               "description": "comentarios",             "logo": ""},
-    {"key": "accounting",              "title": "accounting",                "description": "accounting",              "logo": ""},
-    {"key": "simpli_chat",             "title": "Simpli Chat",               "description": "SImpli Chat",             "logo": ""},
-    {"key": "zones",                   "title": "Zonas",                     "description": "Addon zones",             "logo": ""},
+    {"key": "visit_signature",            "title": "Firma de Visita",              "description": "",                             "logo": ""},
+    {"key": "path_finder",                "title": "path_finder",                  "description": "path_finder",                  "logo": ""},
+    {"key": "ada",                        "title": "Ada",                          "description": "ada",                          "logo": "ada"},
+    {"key": "live_tracking",              "title": "Live Tracking",                "description": "Live Tracking",                "logo": ""},
+    {"key": "rest_time",                  "title": "Tiempo de Descanso",           "description": "rest_time",                    "logo": ""},
+    {"key": "mobile_route_edition",       "title": "Edición de Ruta Móvil",        "description": "Addon mobile_route_edition",   "logo": "-"},
+    {"key": "mobile_features",            "title": "Funciones Móviles",            "description": "Addon mobile_features",        "logo": "-"},
+    {"key": "seller_management",          "title": "Gestión de Sellers",           "description": "seller_management",            "logo": ""},
+    {"key": "territory_planner",          "title": "force field",                  "description": "force field",                  "logo": ""},
+    {"key": "account_configs_edition",    "title": "Edición de Configuración",     "description": "account_configs_edition",      "logo": ""},
+    {"key": "management_comments",        "title": "Comentarios",                  "description": "comentarios",                  "logo": ""},
+    {"key": "accounting",                 "title": "accounting",                   "description": "accounting",                   "logo": ""},
+    {"key": "simpli_chat",                "title": "Simpli Chat",                  "description": "SImpli Chat",                  "logo": ""},
+    {"key": "zones",                      "title": "Zonas",                        "description": "Addon zones",                  "logo": ""},
+    {"key": "delivery_survey",            "title": "Delivery Survey",              "description": "delivery_survey",              "logo": ""},
+    {"key": "tms",                        "title": "TMS",                          "description": "tms",                          "logo": ""},
+    {"key": "visit_card_additional_data", "title": "Visit Card Additional Data",   "description": "visit_card_additional_data",   "logo": "-"},
 ]
 
 
@@ -239,23 +242,25 @@ def page_configurar_addons():
             label  = master_entry["title"] if master_entry else (addon.get("title") or addon.get("key"))
             estado = addon.get("enable", False)
 
-            color_borde = "#2ecc71" if estado else "#e74c3c"
-            estado_txt  = "🟢 Activo" if estado else "🔴 Inactivo"
-            btn_label   = "🔴 Desactivar" if estado else "🟢 Activar"
+            color_borde  = "#1D9E75" if estado else "#E24B4A"
+            status_color = "#0F6E56" if estado else "#A32D2D"
+            badge_bg     = "#E1F5EE" if estado else "#FCEBEB"
+            estado_txt   = "✅ Activo" if estado else "🔴 Inactivo"
+            btn_label    = "🔴 Desactivar" if estado else "🟢 Activar"
 
             with cols[idx % 3]:
                 st.markdown(
                     f"""
                     <div style="
-                        border: 2px solid {color_borde};
+                        border: 1.5px solid {color_borde};
                         border-radius: 10px;
                         padding: 14px 16px 8px 16px;
                         margin-bottom: 12px;
-                        background: #1a1a2e;
+                        background: #ffffff;
                     ">
-                        <div style="font-size:15px; font-weight:700; color:#ffffff; margin-bottom:2px;">{label}</div>
-                        <div style="font-size:11px; color:#888; margin-bottom:8px;"><code>{addon['key']}</code></div>
-                        <div style="font-size:13px; color:{color_borde}; font-weight:600;">{estado_txt}</div>
+                        <div style="font-size:14px; font-weight:600; color:#1a1a1a; margin-bottom:4px;">{label}</div>
+                        <div style="font-size:11px; font-family:monospace; background:{badge_bg}; color:{status_color}; display:inline-block; padding:1px 7px; border-radius:4px; margin-bottom:8px;">{addon['key']}</div>
+                        <div style="font-size:13px; color:{status_color}; font-weight:500;">{estado_txt}</div>
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -298,21 +303,22 @@ def page_configurar_addons():
             st.divider()
             st.subheader("➕ Addons no configurados")
             st.caption("Estos addons no están en la cuenta. Puedes agregarlos aquí.")
+            staff_tok_input = st.text_input("🔐 Token Staff *(requerido para agregar addons)*", type="password", key="staff_token_addons", placeholder="Token de usuario Staff")
             cols2 = st.columns(3)
             for idx2, master in enumerate(missing):
                 with cols2[idx2 % 3]:
                     st.markdown(
                         f"""
                         <div style="
-                            border: 2px dashed #555;
+                            border: 1.5px dashed #ccc;
                             border-radius: 10px;
                             padding: 14px 16px 8px 16px;
                             margin-bottom: 12px;
-                            background: #111;
+                            background: #fafafa;
                         ">
-                            <div style="font-size:15px; font-weight:700; color:#aaa; margin-bottom:2px;">{master['title']}</div>
-                            <div style="font-size:11px; color:#555; margin-bottom:8px;"><code>{master['key']}</code></div>
-                            <div style="font-size:12px; color:#666;">No configurado</div>
+                            <div style="font-size:14px; font-weight:600; color:#555; margin-bottom:4px;">{master['title']}</div>
+                            <div style="font-size:11px; font-family:monospace; background:#f0f0f0; color:#888; display:inline-block; padding:1px 7px; border-radius:4px; margin-bottom:8px;">{master['key']}</div>
+                            <div style="font-size:12px; color:#aaa;">No configurado</div>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -326,10 +332,11 @@ def page_configurar_addons():
                             "logo":        master["logo"],
                             "value":       True
                         }
+                        use_tok = staff_tok_input.strip() if staff_tok_input and staff_tok_input.strip() else tok
                         try:
                             r = requests.post(
                                 "http://api.simpliroute.com/v1/addons/addons/",
-                                headers={"Authorization": f"Token {tok}", "Content-Type": "application/json"},
+                                headers={"Authorization": f"Token {use_tok}", "Content-Type": "application/json"},
                                 json=payload, timeout=15
                             )
                             post_code, post_resp = r.status_code, r.json()
@@ -349,6 +356,8 @@ def page_configurar_addons():
                             except:
                                 pass
                             st.rerun()
+                        elif post_code == 403:
+                            st.error("❌ Error 403 — Esta acción solo puede realizarla un usuario Staff. Ingresa tu token de Staff en el campo de arriba.")
                         elif post_code == 401:
                             st.error("❌ Token inválido")
                         else:
