@@ -197,13 +197,9 @@ MASTER_ADDONS = [
 def page_configurar_addons():
     st.title("⚙️ Configurar Addons")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_addons")
-    with col2:
-        account_id_input = st.text_input("🏢 Account ID", placeholder="Ej: 41375", key="account_id_addons")
+    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_addons")
 
-    if st.button("🔍 Consultar Addons", type="primary", disabled=not (token and account_id_input)):
+    if st.button("🔍 Consultar Addons", type="primary", disabled=not token):
         with st.spinner("Consultando addons..."):
             try:
                 r = requests.get(
@@ -216,10 +212,10 @@ def page_configurar_addons():
                 code, resp = None, str(e)
 
         if code == 200:
+            acc_id = resp[0]["account_id"] if resp else "—"
             st.session_state["addons_data"]    = resp
             st.session_state["addons_token"]   = token
-            st.session_state["addons_account"] = account_id_input
-            st.success(f"✅ {len(resp)} addon(s) encontrados")
+            st.session_state["addons_account"] = acc_id
         elif code == 401:
             st.error("❌ Token inválido")
         else:
@@ -232,26 +228,39 @@ def page_configurar_addons():
         acc_id        = st.session_state["addons_account"]
         existing_keys = {a["key"] for a in addons}
 
+        st.info(f"🏢 Cuenta: **{acc_id}** · {len(addons)} addon(s) configurados")
         st.divider()
         st.subheader("📋 Addons de la cuenta")
 
-        for addon in addons:
-            col_name, col_estado, col_btn = st.columns([4, 1, 1])
-            # Buscar label traducido en el catálogo maestro
+        # ── Cards en 3 columnas ───────────────────────────────────────────────
+        cols = st.columns(3)
+        for idx, addon in enumerate(addons):
             master_entry = next((m for m in MASTER_ADDONS if m["key"] == addon["key"]), None)
             label  = master_entry["title"] if master_entry else (addon.get("title") or addon.get("key"))
             estado = addon.get("enable", False)
 
-            with col_name:
-                st.markdown(f"**{label}** `{addon['key']}`")
-            with col_estado:
-                if estado:
-                    st.success("ON")
-                else:
-                    st.error("OFF")
-            with col_btn:
-                btn_label = "🔴 Desactivar" if estado else "🟢 Activar"
-                if st.button(btn_label, key=f"toggle_{addon['id']}"):
+            color_borde = "#2ecc71" if estado else "#e74c3c"
+            estado_txt  = "🟢 Activo" if estado else "🔴 Inactivo"
+            btn_label   = "🔴 Desactivar" if estado else "🟢 Activar"
+
+            with cols[idx % 3]:
+                st.markdown(
+                    f"""
+                    <div style="
+                        border: 2px solid {color_borde};
+                        border-radius: 10px;
+                        padding: 14px 16px 8px 16px;
+                        margin-bottom: 12px;
+                        background: #1a1a2e;
+                    ">
+                        <div style="font-size:15px; font-weight:700; color:#ffffff; margin-bottom:2px;">{label}</div>
+                        <div style="font-size:11px; color:#888; margin-bottom:8px;"><code>{addon['key']}</code></div>
+                        <div style="font-size:13px; color:{color_borde}; font-weight:600;">{estado_txt}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                if st.button(btn_label, key=f"toggle_{addon['id']}", use_container_width=True):
                     new_val = not estado
                     payload = [{
                         "id":          addon["id"],
@@ -269,15 +278,13 @@ def page_configurar_addons():
                             json=payload, timeout=15
                         )
                         put_code = r.status_code
-                    except Exception as e:
+                    except:
                         put_code = None
 
                     if put_code in [200, 201]:
                         for a in st.session_state["addons_data"]:
                             if a["id"] == addon["id"]:
                                 a["enable"] = new_val
-                        accion = "activado" if new_val else "desactivado"
-                        st.success(f"✅ **{label}** {accion}")
                         st.rerun()
                     elif put_code == 401:
                         st.error("❌ Token inválido")
@@ -291,13 +298,26 @@ def page_configurar_addons():
             st.divider()
             st.subheader("➕ Addons no configurados")
             st.caption("Estos addons no están en la cuenta. Puedes agregarlos aquí.")
-
-            for master in missing:
-                col_name2, col_btn2 = st.columns([5, 1])
-                with col_name2:
-                    st.markdown(f"**{master['title']}** `{master['key']}`")
-                with col_btn2:
-                    if st.button("➕ Agregar", key=f"add_{master['key']}"):
+            cols2 = st.columns(3)
+            for idx2, master in enumerate(missing):
+                with cols2[idx2 % 3]:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            border: 2px dashed #555;
+                            border-radius: 10px;
+                            padding: 14px 16px 8px 16px;
+                            margin-bottom: 12px;
+                            background: #111;
+                        ">
+                            <div style="font-size:15px; font-weight:700; color:#aaa; margin-bottom:2px;">{master['title']}</div>
+                            <div style="font-size:11px; color:#555; margin-bottom:8px;"><code>{master['key']}</code></div>
+                            <div style="font-size:12px; color:#666;">No configurado</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    if st.button("➕ Agregar", key=f"add_{master['key']}", use_container_width=True):
                         payload = {
                             "account_id":  int(acc_id),
                             "title":       master["title"],
