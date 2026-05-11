@@ -326,12 +326,12 @@ def page_configurar_addons():
 # ── FEATURE: PERMISOS DE USUARIO ─────────────────────────────────────────────
 PERMISOS_AMIGABLES = {
     "reports.edit":                               "📊 Reportes",
-    "watchtower.tracking.edit":                   "🗺️ Watch Tower - Tracking",
-    "watchtower.visits.edit":                     "📍 Watch Tower - Visitas",
+    "watchtower.tracking.edit":                   "🗺️ Seguimiento",
+    "watchtower.visits.edit":                     "📍 Mis Visitas",
     "settings.communications.live_tracking.edit": "📡 Comunicaciones",
     "settings.communications.wsp_pro.edit":       "💬 WhatsApp Pro",
-    "clients.edit":                               "👥 Clientes",
-    "chat.edit":                                  "💬 Chat",
+    "clients.edit":                               "👥 Mis Clientes",
+    "chat.edit":                                  "💬 Simpli Chat",
     "ada.edit":                                   "🤖 Ada",
     "forcefield.edit":                            "🛡️ ForceField",
     "settings.vehicles.edit":                     "🚗 Vehículos",
