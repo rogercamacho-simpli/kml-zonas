@@ -12,19 +12,19 @@ st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wid
 # ── NAVEGACIÓN ────────────────────────────────────────────────────────────────
 CORE_OPTIONS = [
     "🧑‍💼 Agregar Seller a Visitas",
-    "🚛 Flotas",
-    "🗺️ Zonas",
+    "📍 Análisis de Recorrido GPS",
     "👤 Cambiar Rol de Usuario",
     "⚙️ Configurar Addons",
     "🔔 Crear Webhook",
     "🔓 Desbloqueo de Contraseña",
     "✏️ Edición de Visitas",
     "🗑️ Eliminación Masiva de Visitas",
+    "🚛 Flotas",
     "🚦 Iniciar / Cerrar Rutas",
-    "📍 Análisis de Recorrido GPS",
     "🔁 Reenviar Webhooks",
     "🏷️ Tipos de Visita y Skills",
     "📡 Validación de GPS",
+    "🗺️ Zonas",
 ]
 TMS_OPTIONS = [
     "📄 Tipos de Documento",
