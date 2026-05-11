@@ -42,6 +42,8 @@ MENU_GROUPS = [
 if "current_page" not in st.session_state:
     st.session_state["current_page"] = MENU_GROUPS[0][1][0]
 
+selected = st.session_state["current_page"]
+
 def nav_item(label):
     is_active = st.session_state["current_page"] == label
     if st.sidebar.button(label, key=f"nav_{label}", use_container_width=True,
@@ -66,7 +68,6 @@ with st.sidebar:
     st.caption("SimpliRoute Internal Tools v1.0")
 
 selected = st.session_state["current_page"]
-
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def haversine_m(lat1, lon1, lat2, lon2):
