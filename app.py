@@ -632,9 +632,10 @@ def page_permisos_usuario():
         st.caption(f"📧 {user.get('email') or 'Sin email'} · ID: {user.get('id')}")
 
         # 3. Obtener roles de la cuenta
+        code2, roles = None, []
         with st.spinner("Consultando roles de la cuenta..."):
             try:
-                r2 = requests.get(f"https://api-gateway.simpliroute.com/v1/accounts/{account_id.strip()}/roles/",
+                r2 = requests.get(f"https://api-gateway.simpliroute.com/v1/accounts/{account_id}/roles/",
                                   headers={"Authorization": f"Token {token}", "accept": "application/json"}, timeout=15)
                 code2, roles = r2.status_code, r2.json()
             except Exception as e:
