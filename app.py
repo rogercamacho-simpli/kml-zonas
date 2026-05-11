@@ -203,7 +203,7 @@ MASTER_ADDONS = [
     {"key": "delivery_survey",            "title": "Delivery Survey",              "description": "delivery_survey",              "logo": ""},
     {"key": "tms",                        "title": "TMS",                          "description": "tms",                          "logo": ""},
     {"key": "visit_card_additional_data", "title": "Visit Card Additional Data",   "description": "visit_card_additional_data",   "logo": "-"},
-    {"key": "roles",                      "title": "Roles Personalizados",          "description": "roles",                        "logo": ""},
+    {"key": "roles",                      "title": "Roles Personalizados",         "description": "roles",                        "logo": ""},
 ]
 
 
@@ -255,13 +255,11 @@ def page_configurar_addons():
 
             with cols[idx % 3]:
                 st.markdown(
-                    f"""
-                    <div style="border:1.5px solid {color_borde};border-radius:10px;padding:14px 16px 8px 16px;margin-bottom:12px;background:#ffffff;">
+                    f"""<div style="border:1.5px solid {color_borde};border-radius:10px;padding:14px 16px 8px 16px;margin-bottom:12px;background:#ffffff;">
                         <div style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:4px;">{label}</div>
                         <div style="font-size:11px;font-family:monospace;background:{badge_bg};color:{status_color};display:inline-block;padding:1px 7px;border-radius:4px;margin-bottom:8px;">{addon['key']}</div>
                         <div style="font-size:13px;color:{status_color};font-weight:500;">{estado_txt}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    </div>""", unsafe_allow_html=True)
                 if st.button(btn_label, key=f"toggle_{addon['id']}", use_container_width=True):
                     new_val = not estado
                     payload = [{"id": addon["id"], "account_id": addon["account_id"], "title": addon.get("title",""),
@@ -292,13 +290,11 @@ def page_configurar_addons():
             for idx2, master in enumerate(missing):
                 with cols2[idx2 % 3]:
                     st.markdown(
-                        f"""
-                        <div style="border:1.5px dashed #ccc;border-radius:10px;padding:14px 16px 8px 16px;margin-bottom:12px;background:#fafafa;">
+                        f"""<div style="border:1.5px dashed #ccc;border-radius:10px;padding:14px 16px 8px 16px;margin-bottom:12px;background:#fafafa;">
                             <div style="font-size:14px;font-weight:600;color:#555;margin-bottom:4px;">{master['title']}</div>
                             <div style="font-size:11px;font-family:monospace;background:#f0f0f0;color:#888;display:inline-block;padding:1px 7px;border-radius:4px;margin-bottom:8px;">{master['key']}</div>
                             <div style="font-size:12px;color:#aaa;">No configurado</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        </div>""", unsafe_allow_html=True)
                     if st.button("➕ Agregar", key=f"add_{master['key']}", use_container_width=True):
                         use_tok = staff_tok_input.strip() if staff_tok_input and staff_tok_input.strip() else tok
                         payload = {"account_id": int(acc_id), "title": master["title"], "key": master["key"],
@@ -325,6 +321,127 @@ def page_configurar_addons():
         else:
             st.divider()
             st.info("✅ La cuenta tiene todos los addons del catálogo configurados.")
+
+
+# ── FEATURE: PERMISOS DE USUARIO ─────────────────────────────────────────────
+PERMISOS_AMIGABLES = {
+    "reports.edit":                               "📊 Reportes",
+    "watchtower.tracking.edit":                   "🗺️ Seguimiento en tiempo real",
+    "watchtower.visits.edit":                     "📍 Gestión de visitas",
+    "settings.communications.live_tracking.edit": "📡 Live Tracking",
+    "clients.edit":                               "👥 Módulo de clientes",
+    "chat.edit":                                  "💬 Chat interno",
+    "settings.vehicles.edit":                     "🚗 Vehículos",
+    "pathfinder.plans.edit":                      "📋 Planes de despacho",
+    "pathfinder.router.edit":                     "🔀 Optimizador de rutas",
+    "settings.users.edit":                        "👤 Gestión de usuarios",
+    "settings.vehicles.fleets.edit":              "🚛 Flotas",
+    "settings.zones.edit":                        "🗺️ Zonas",
+    "settings.optimizers.edit":                   "⚙️ Optimizadores",
+    "settings.mobile.edit":                       "📱 Configuración móvil",
+    "settings.security.edit":                     "🔒 Seguridad",
+    "settings.customization.edit":                "🎨 Personalización",
+}
+
+SYSTEM_ROLE_FLAGS = {
+    "is_owner":         "Owner",
+    "is_admin":         "Administrador",
+    "is_router":        "Router",
+    "is_router_jr":     "Router Jr",
+    "is_coordinator":   "Coordinador",
+    "is_monitor":       "Monitor",
+    "is_seller":        "Seller",
+    "is_seller_viewer": "Seller Viewer",
+    "is_driver":        "Conductor",
+    "is_codriver":      "Co-conductor",
+}
+
+def page_permisos_usuario():
+    st.title("🔍 Permisos de Usuario")
+    st.markdown("Consulta el rol y permisos de un usuario, incluyendo roles personalizados.")
+
+    col1, col2 = st.columns(2)
+    with col1: token   = st.text_input("🔑 Token", type="password", key="token_permisos")
+    with col2: user_id = st.text_input("🆔 User ID", placeholder="Ej: 503734", key="user_permisos")
+
+    if not st.button("🔍 Consultar", type="primary", disabled=not (token and user_id)):
+        return
+
+    # 1. Obtener account_id via /me
+    try:
+        rme = requests.get("http://api.simpliroute.com/v1/accounts/me",
+                           headers={"Authorization": f"Token {token}", "Content-Type": "application/json"}, timeout=15)
+        if rme.status_code == 401:
+            st.error("❌ Token inválido"); return
+        if rme.status_code != 200:
+            st.error(f"❌ Error obteniendo cuenta: {rme.status_code}"); return
+        account_id = rme.json().get("account", {}).get("id")
+        if not account_id:
+            st.error("❌ No se pudo obtener el Account ID"); return
+    except Exception as e:
+        st.error(f"❌ Error: {e}"); return
+
+    # 2. Obtener usuario
+    try:
+        ru = requests.get(f"http://api.simpliroute.com/v1/accounts/users/{user_id.strip()}/",
+                          headers={"Authorization": f"Token {token}"}, timeout=15)
+        if ru.status_code == 401:
+            st.error("❌ Token inválido"); return
+        if ru.status_code != 200:
+            st.error(f"❌ Error {ru.status_code}"); return
+        user = ru.json()
+    except Exception as e:
+        st.error(f"❌ Error consultando usuario: {e}"); return
+
+    # Info del usuario
+    st.divider()
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"**Nombre**<br>{user.get('name','—')}", unsafe_allow_html=True)
+    c2.markdown(f"**Username**<br>{user.get('username','—')}", unsafe_allow_html=True)
+    estado = "🔴 Bloqueado" if user.get("blocked") else "🟢 Activo"
+    c3.markdown(f"**Estado**<br>{estado}", unsafe_allow_html=True)
+    st.caption(f"📧 {user.get('email') or 'Sin email'} · ID: {user.get('id')} · Cuenta: {account_id}")
+
+    # 3. Obtener roles de la cuenta
+    roles = []
+    try:
+        rr = requests.get(f"https://api-gateway.simpliroute.com/v1/accounts/{account_id}/roles/",
+                          headers={"Authorization": f"Token {token}", "accept": "application/json"}, timeout=15)
+        if rr.status_code == 200:
+            roles = rr.json()
+    except Exception:
+        pass
+
+    # 4. Determinar rol y permisos
+    custom_role_name = user.get("custom_role_name")
+    st.divider()
+
+    if custom_role_name:
+        role_data = next((r for r in roles if r.get("name") == custom_role_name), None)
+        st.markdown(f"**🏷️ Rol:** `{custom_role_name}` — *personalizado*")
+    else:
+        flag_key   = next((f for f in SYSTEM_ROLE_FLAGS if user.get(f)), None)
+        role_label = SYSTEM_ROLE_FLAGS.get(flag_key, "Sin rol")
+        role_data  = next((r for r in roles if r.get("legacy_role") == flag_key and r.get("is_system_role")), None)
+        st.markdown(f"**🏷️ Rol:** `{role_label}` — *sistema*")
+
+    if role_data:
+        perm_keys = [p["key"] for p in role_data.get("permissions", [])]
+        tiene    = [PERMISOS_AMIGABLES[k] for k in PERMISOS_AMIGABLES if k in perm_keys]
+        no_tiene = [PERMISOS_AMIGABLES[k] for k in PERMISOS_AMIGABLES if k not in perm_keys]
+
+        st.markdown(f"**✅ Tiene acceso a ({len(tiene)}):**")
+        cols = st.columns(2)
+        for i, label in enumerate(tiene):
+            cols[i % 2].markdown(f"• {label}")
+
+        if no_tiene:
+            with st.expander(f"🚫 Sin acceso ({len(no_tiene)})"):
+                cols2 = st.columns(2)
+                for i, label in enumerate(no_tiene):
+                    cols2[i % 2].markdown(f"• {label}")
+    else:
+        st.warning("⚠️ No se encontraron los permisos detallados para este rol.")
 
 
 # ── FEATURE: AGREGAR SELLER A VISITAS ────────────────────────────────────────
@@ -556,122 +673,6 @@ def page_zonas():
             st.divider()
             if err_count == 0: st.success(f"✅ Completado — **{ok_count} zonas eliminadas**")
             else: st.warning(f"⚠️ Completado con errores — **{ok_count} eliminadas**, {err_count} con error")
-
-
-# ── FEATURE: PERMISOS DE USUARIO ─────────────────────────────────────────────
-PERMISOS_AMIGABLES = {
-    "reports.edit":                               "📊 Reportes",
-    "watchtower.tracking.edit":                   "🗺️ Seguimiento en tiempo real",
-    "watchtower.visits.edit":                     "📍 Gestión de visitas",
-    "settings.communications.live_tracking.edit": "📡 Live Tracking",
-    "clients.edit":                               "👥 Módulo de clientes",
-    "chat.edit":                                  "💬 Chat interno",
-    "settings.vehicles.edit":                     "🚗 Vehículos",
-    "pathfinder.plans.edit":                      "📋 Planes de despacho",
-    "pathfinder.router.edit":                     "🔀 Optimizador de rutas",
-    "settings.users.edit":                        "👤 Gestión de usuarios",
-    "settings.vehicles.fleets.edit":              "🚛 Flotas",
-    "settings.zones.edit":                        "🗺️ Zonas",
-    "settings.optimizers.edit":                   "⚙️ Optimizadores",
-    "settings.mobile.edit":                       "📱 Configuración móvil",
-    "settings.security.edit":                     "🔒 Seguridad",
-    "settings.customization.edit":                "🎨 Personalización",
-}
-
-SYSTEM_ROLE_FLAGS = {
-    "is_owner":        "Owner",
-    "is_admin":        "Administrador",
-    "is_router":       "Router",
-    "is_router_jr":    "Router Jr",
-    "is_coordinator":  "Coordinador",
-    "is_monitor":      "Monitor",
-    "is_seller":       "Seller",
-    "is_seller_viewer":"Seller Viewer",
-    "is_driver":       "Conductor",
-    "is_codriver":     "Co-conductor",
-}
-
-def page_permisos_usuario():
-    st.title("🔍 Permisos de Usuario")
-    st.markdown("Consulta el rol y permisos de un usuario, incluyendo roles personalizados.")
-
-    col1, col2 = st.columns(2)
-    with col1: token   = st.text_input("🔑 Token", type="password", key="token_permisos")
-    with col2: user_id = st.text_input("🆔 User ID", placeholder="Ej: 503734", key="user_permisos")
-
-    if st.button("🔍 Consultar", type="primary", disabled=not (token and user_id)):
-        # 1. Validar token y obtener account_id
-        with st.spinner("Validando token..."):
-            try:
-                rv = requests.get(f"http://api.simpliroute.com/v1/accounts/api-token/{token.strip()}/validate/",
-                                  headers={"Content-Type": "application/json"}, timeout=15)
-                vcode, vresp = rv.status_code, rv.json()
-            except Exception as e:
-                st.error(f"❌ Error validando token: {e}"); return
-        if vcode != 200 or not vresp.get("isvalid"):
-            st.error("❌ Token inválido"); return
-        account_id = vresp.get("account_id")
-        if not account_id:
-            st.error("❌ No se pudo obtener el Account ID del token"); return
-            try:
-                r = requests.get(f"http://api.simpliroute.com/v1/accounts/users/{user_id.strip()}/",
-                                 headers={"Authorization": f"Token {token}"}, timeout=15)
-                code, user = r.status_code, r.json()
-            except Exception as e:
-                st.error(f"❌ Error: {e}"); return
-        if code == 401: st.error("❌ Token inválido"); return
-        if code != 200: st.error(f"❌ Error {code}: {user}"); return
-
-        # Info del usuario
-        st.divider()
-        c1, c2, c3 = st.columns(3)
-        c1.markdown(f"**Nombre**<br>{user.get('name','—')}", unsafe_allow_html=True)
-        c2.markdown(f"**Username**<br>{user.get('username','—')}", unsafe_allow_html=True)
-        estado = "🔴 Bloqueado" if user.get("blocked") else "🟢 Activo"
-        c3.markdown(f"**Estado**<br>{estado}", unsafe_allow_html=True)
-        st.caption(f"📧 {user.get('email') or 'Sin email'} · ID: {user.get('id')}")
-
-        # 3. Obtener roles de la cuenta
-        code2, roles = None, []
-        with st.spinner("Consultando roles de la cuenta..."):
-            try:
-                r2 = requests.get(f"https://api-gateway.simpliroute.com/v1/accounts/{account_id}/roles/",
-                                  headers={"Authorization": f"Token {token}", "accept": "application/json"}, timeout=15)
-                code2, roles = r2.status_code, r2.json()
-            except Exception as e:
-                code2, roles = None, []
-        if code2 != 200: roles = []
-
-        # 3. Determinar rol y permisos
-        custom_role_name = user.get("custom_role_name")
-        st.divider()
-
-        if custom_role_name:
-            role_data = next((r for r in roles if r.get("name") == custom_role_name), None)
-            st.markdown(f"**🏷️ Rol:** `{custom_role_name}` — *personalizado*")
-        else:
-            flag_key   = next((f for f in SYSTEM_ROLE_FLAGS if user.get(f)), None)
-            role_label = SYSTEM_ROLE_FLAGS.get(flag_key, "Sin rol")
-            role_data  = next((r for r in roles if r.get("legacy_role") == flag_key and r.get("is_system_role")), None)
-            st.markdown(f"**🏷️ Rol:** `{role_label}` — *sistema*")
-
-        if role_data:
-            perm_keys = [p["key"] for p in role_data.get("permissions", [])]
-            tiene     = [PERMISOS_AMIGABLES[k] for k in PERMISOS_AMIGABLES if k in perm_keys]
-            no_tiene  = [PERMISOS_AMIGABLES[k] for k in PERMISOS_AMIGABLES if k not in perm_keys]
-
-            st.markdown(f"**✅ Tiene acceso a ({len(tiene)}):**")
-            cols = st.columns(2)
-            for i, label in enumerate(tiene):
-                cols[i % 2].markdown(f"• {label}")
-
-            if no_tiene:
-                with st.expander(f"🚫 Sin acceso ({len(no_tiene)})"):
-                    cols2 = st.columns(2)
-                    for i, label in enumerate(no_tiene):
-                        cols2[i % 2].markdown(f"• {label}")
-        else:
-            st.warning("⚠️ No se encontraron los permisos detallados para este rol.")
 
 
 # ── FEATURE: CAMBIAR ROL ──────────────────────────────────────────────────────
@@ -1429,7 +1430,7 @@ def page_tms_transportistas():
 if selected == "🧑‍💼 Agregar Seller a Visitas":     page_agregar_seller()
 elif selected == "🚛 Flotas":                        page_flotas()
 elif selected == "🗺️ Zonas":                         page_zonas()
-elif selected == "🔍 Permisos de Usuario":             page_permisos_usuario()
+elif selected == "🔍 Permisos de Usuario":           page_permisos_usuario()
 elif selected == "👤 Cambiar Rol de Usuario":         page_cambiar_rol()
 elif selected == "⚙️ Configurar Addons":             page_configurar_addons()
 elif selected == "🔔 Crear Webhook":                 page_crear_webhook()
