@@ -12,8 +12,8 @@ st.set_page_config(page_title="SimpliRoute Tools", page_icon="🚀", layout="wid
 # ── NAVEGACIÓN ────────────────────────────────────────────────────────────────
 CORE_OPTIONS = [
     "🧑‍💼 Agregar Seller a Visitas",
-    "🚛 Asignación de Flotas",
-    "🗺️ Cargar Zonas",
+    "🚛 Flotas",
+    "🗺️ Zonas",
     "👤 Cambiar Rol de Usuario",
     "⚙️ Configurar Addons",
     "🔔 Crear Webhook",
@@ -38,6 +38,9 @@ def nav_item(label):
     is_active = st.session_state["current_page"] == label
     if st.sidebar.button(label, key=f"nav_{label}", use_container_width=True,
                          type="primary" if is_active else "secondary"):
+        for key in list(st.session_state.keys()):
+            if key != "current_page":
+                del st.session_state[key]
         st.session_state["current_page"] = label
         st.rerun()
 
@@ -421,108 +424,182 @@ def page_agregar_seller():
             else: st.error(f"❌ Error {code}")
 
 
-# ── FEATURE: ASIGNACIÓN DE FLOTAS ────────────────────────────────────────────
-def page_asignacion_flotas():
-    st.title("🚛 Asignación de Flotas")
-    st.info("ℹ️ Cada fila representa una edición independiente. Si la misma flota aparece dos veces, prevalece la última.")
-    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_flotas")
-    def make_tpl():
-        wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Flotas"
-        ws.append(["Nombre de flota","Vehículos","Usuarios"])
-        ws.append(["Flota Norte","MC4327,QC4380","juan.perez,ana.lopez"])
-        ws.column_dimensions["A"].width=25; ws.column_dimensions["B"].width=40; ws.column_dimensions["C"].width=40
-        buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Descargar plantilla", data=make_tpl(), file_name="plantilla_flotas.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    fleet_file = st.file_uploader("📂 Sube tu Excel", type=["xlsx"], key="upload_flotas")
-    if fleet_file and token:
-        if st.button("🚀 Procesar flotas", type="primary"):
-            try:
-                rows = read_excel_column(fleet_file, ["Nombre de flota","Vehículos","Usuarios"])
-            except Exception as e:
-                st.error(f"❌ Error leyendo Excel: {e}"); return
-            with st.spinner("⏳ Consultando flotas, vehículos y usuarios..."):
-                try:
-                    rf = requests.get("http://api.simpliroute.com/v1/fleets/", headers={"Authorization":f"Token {token}"}, timeout=300)
-                    rv = requests.get("http://api.simpliroute.com/v1/routes/vehicles/", headers={"Authorization":f"Token {token}"}, timeout=300)
-                    code_u, users = get_users_list(token)
-                    fleets, vehicles = rf.json(), rv.json()
-                except Exception as e:
-                    st.error(f"❌ Error: {e}"); return
-            fleet_map = {f["name"].strip().lower(): f for f in fleets}
-            vehicle_map = {v["name"].strip().lower(): v["id"] for v in vehicles if v.get("name")}
-            user_map = {}
-            for u in (users if isinstance(users, list) else []):
-                if u.get("username"): user_map[u["username"].strip().lower()] = u["id"]
-                if u.get("email"): user_map[u["email"].strip().lower()] = u["id"]
-            st.success(f"✅ {len(fleets)} flotas · {len(vehicles)} vehículos · {len(user_map)} usuarios")
-            st.divider()
-            for row in rows:
-                fname = row["Nombre de flota"].strip()
-                if fname.lower() not in fleet_map:
-                    st.error(f"❌ **{fname}** — Flota no encontrada"); continue
-                fleet = fleet_map[fname.lower()]
-                vids, verrs = [], []
-                for v in [x.strip() for x in row["Vehículos"].split(",") if x.strip()]:
-                    vid = vehicle_map.get(v.lower())
-                    (vids if vid else verrs).append(vid if vid else v)
-                uids, uerrs = [], []
-                for u in [x.strip() for x in row["Usuarios"].split(",") if x.strip()]:
-                    uid = user_map.get(u.lower())
-                    (uids if uid else uerrs).append(uid if uid else u)
-                if verrs: st.warning(f"⚠️ **{fname}** — Vehículos no encontrados: {', '.join(str(x) for x in verrs)}")
-                if uerrs: st.warning(f"⚠️ **{fname}** — Usuarios no encontrados: {', '.join(str(x) for x in uerrs)}")
-                try:
-                    r = requests.put(f"http://api.simpliroute.com/v1/fleets/{fleet['id']}/",
-                                     headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
-                                     json={"id":fleet["id"],"name":fname,"vehicles":vids,"users":uids}, timeout=300)
-                    code = r.status_code
-                except:
-                    code = None
-                if code == 200: st.success(f"✅ **{fname}** — Actualizada ({len(vids)} vehículos · {len(uids)} usuarios)")
-                else: st.error(f"❌ **{fname}** — Error {code}")
-    elif fleet_file and not token:
-        st.warning("⚠️ Ingresa tu token.")
+# ── FEATURE: FLOTAS ──────────────────────────────────────────────────────────
+def page_flotas():
+    st.title("🚛 Flotas")
+    tab1, tab2 = st.tabs(["📋 Asignar Flotas", "🗑️ Eliminar Flotas"])
 
-
-# ── FEATURE: CARGAR ZONAS ─────────────────────────────────────────────────────
-def page_cargar_zonas():
-    st.title("🗺️ Cargar Zonas")
-    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas")
-    uploaded = st.file_uploader("📂 Sube tu archivo KML o RTF", type=["kml","rtf","txt"])
-    if uploaded:
-        text = decode_file(uploaded.read())
-        if text.strip().startswith("{\\rtf") or "\\rtf" in text[:100]:
-            text = strip_rtf_codes(text)
-        polygons = parse_polygons(text)
-        if not polygons:
-            st.warning("No se encontraron polígonos."); return
-        st.success(f"✅ {len(polygons)} polígono(s)")
-        for p in polygons:
-            with st.expander(f"📍 {p['name']} — {len(p['coords'])} puntos"):
-                st.code(coords_to_str(p["coords"][:3]) + ",...]")
-        st.download_button("⬇️ Descargar Excel", data=generate_excel_zones(polygons), file_name="ZONES.xlsx",
+    with tab1:
+        st.info("ℹ️ Cada fila representa una edición independiente. Si la misma flota aparece dos veces, prevalece la última.")
+        token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_flotas")
+        def make_tpl():
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Flotas"
+            ws.append(["Nombre de flota","Vehículos","Usuarios"])
+            ws.append(["Flota Norte","MC4327,QC4380","juan.perez,ana.lopez"])
+            ws.column_dimensions["A"].width=25; ws.column_dimensions["B"].width=40; ws.column_dimensions["C"].width=40
+            buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+        st.download_button("📥 Descargar plantilla", data=make_tpl(), file_name="plantilla_flotas.xlsx",
                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        st.divider()
-        if not token:
-            st.warning("⚠️ Ingresa tu token para cargar zonas.")
-        elif st.button("🚀 Cargar zonas", type="primary"):
-            prog = st.progress(0); status = st.empty()
-            for i, p in enumerate(polygons):
-                status.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
+        fleet_file = st.file_uploader("📂 Sube tu Excel", type=["xlsx"], key="upload_flotas")
+        if fleet_file and token:
+            if st.button("🚀 Procesar flotas", type="primary"):
                 try:
-                    r = requests.post("http://api.simpliroute.com/v1/zones/",
-                                      headers={"authorization":f"Token {token}","content-type":"application/json"},
-                                      json={"name":p["name"],"coordinates":coords_to_str(p["coords"]),"vehicles":[]}, timeout=15)
+                    rows = read_excel_column(fleet_file, ["Nombre de flota","Vehículos","Usuarios"])
+                except Exception as e:
+                    st.error(f"❌ Error leyendo Excel: {e}"); return
+                with st.spinner("⏳ Consultando flotas, vehículos y usuarios..."):
+                    try:
+                        rf = requests.get("http://api.simpliroute.com/v1/fleets/", headers={"Authorization":f"Token {token}"}, timeout=300)
+                        rv = requests.get("http://api.simpliroute.com/v1/routes/vehicles/", headers={"Authorization":f"Token {token}"}, timeout=300)
+                        code_u, users = get_users_list(token)
+                        fleets, vehicles = rf.json(), rv.json()
+                    except Exception as e:
+                        st.error(f"❌ Error: {e}"); return
+                fleet_map = {f["name"].strip().lower(): f for f in fleets}
+                vehicle_map = {v["name"].strip().lower(): v["id"] for v in vehicles if v.get("name")}
+                user_map = {}
+                for u in (users if isinstance(users, list) else []):
+                    if u.get("username"): user_map[u["username"].strip().lower()] = u["id"]
+                    if u.get("email"): user_map[u["email"].strip().lower()] = u["id"]
+                st.success(f"✅ {len(fleets)} flotas · {len(vehicles)} vehículos · {len(user_map)} usuarios")
+                st.divider()
+                for row in rows:
+                    fname = row["Nombre de flota"].strip()
+                    if fname.lower() not in fleet_map:
+                        st.error(f"❌ **{fname}** — Flota no encontrada"); continue
+                    fleet = fleet_map[fname.lower()]
+                    vids, verrs = [], []
+                    for v in [x.strip() for x in row["Vehículos"].split(",") if x.strip()]:
+                        vid = vehicle_map.get(v.lower())
+                        (vids if vid else verrs).append(vid if vid else v)
+                    uids, uerrs = [], []
+                    for u in [x.strip() for x in row["Usuarios"].split(",") if x.strip()]:
+                        uid = user_map.get(u.lower())
+                        (uids if uid else uerrs).append(uid if uid else u)
+                    if verrs: st.warning(f"⚠️ **{fname}** — Vehículos no encontrados: {', '.join(str(x) for x in verrs)}")
+                    if uerrs: st.warning(f"⚠️ **{fname}** — Usuarios no encontrados: {', '.join(str(x) for x in uerrs)}")
+                    try:
+                        r = requests.put(f"http://api.simpliroute.com/v1/fleets/{fleet['id']}/",
+                                         headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
+                                         json={"id":fleet["id"],"name":fname,"vehicles":vids,"users":uids}, timeout=300)
+                        code = r.status_code
+                    except:
+                        code = None
+                    if code == 200: st.success(f"✅ **{fname}** — Actualizada ({len(vids)} vehículos · {len(uids)} usuarios)")
+                    else: st.error(f"❌ **{fname}** — Error {code}")
+        elif fleet_file and not token:
+            st.warning("⚠️ Ingresa tu token.")
+
+    with tab2:
+        st.error("⚠️ **ADVERTENCIA:** La eliminación de flotas es permanente y no se puede deshacer.")
+        token_del = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_flotas_del")
+        st.caption("Pega los IDs de flota uno por línea:\n```\n47524\n47525\n```")
+        fleet_ids_raw = st.text_area("IDs de flota", placeholder="47524\n47525", height=180, label_visibility="collapsed", key="fleet_ids_del")
+        confirm_del = st.checkbox("✅ Confirmo que quiero eliminar estas flotas de forma permanente", key="confirm_flotas_del")
+        if st.button("🗑️ Eliminar Flotas", type="primary", disabled=not (token_del and fleet_ids_raw and confirm_del)):
+            fleet_ids = []
+            for l in fleet_ids_raw.strip().splitlines():
+                l = l.strip()
+                if not l: continue
+                try: fleet_ids.append(int(l))
+                except: st.warning(f"⚠️ ID inválido ignorado: {l}")
+            if not fleet_ids: st.error("❌ No se encontraron IDs válidos."); return
+            prog = st.progress(0); status = st.empty()
+            ok_count = 0; err_count = 0
+            for i, fid in enumerate(fleet_ids):
+                status.info(f"Eliminando flota **{fid}** ({i+1}/{len(fleet_ids)})...")
+                try:
+                    r = requests.delete(f"https://api.simpliroute.com/v1/fleets/{fid}",
+                                        headers={"Authorization": f"Token {token_del}", "accept": "application/json"}, timeout=30)
                     code = r.status_code
-                except:
-                    code = None
-                if code in [200,201]: st.success(f"✅ {p['name']}")
-                elif code == 400: st.warning(f"⚠️ {p['name']} — Ya existe")
-                elif code == 401: st.error(f"❌ {p['name']} — Token inválido")
-                else: st.error(f"❌ {p['name']} — Error {code}")
-                prog.progress((i+1)/len(polygons))
+                except Exception as e:
+                    st.error(f"❌ **{fid}** — Error: {e}"); err_count += 1; prog.progress((i+1)/len(fleet_ids)); continue
+                if code in [200, 204]: st.success(f"✅ Flota **{fid}** eliminada"); ok_count += 1
+                elif code == 401: st.error(f"❌ Token inválido."); status.empty(); prog.empty(); return
+                elif code == 404: st.warning(f"⚠️ **{fid}** — No encontrada")
+                else: st.error(f"❌ **{fid}** — Error {code}"); err_count += 1
+                prog.progress((i+1)/len(fleet_ids))
             status.empty(); prog.empty()
+            st.divider()
+            if err_count == 0: st.success(f"✅ Completado — **{ok_count} flotas eliminadas**")
+            else: st.warning(f"⚠️ Completado con errores — **{ok_count} eliminadas**, {err_count} con error")
+
+
+# ── FEATURE: ZONAS ───────────────────────────────────────────────────────────
+def page_zonas():
+    st.title("🗺️ Zonas")
+    tab1, tab2 = st.tabs(["📂 Cargar Zonas", "🗑️ Eliminar Zonas"])
+
+    with tab1:
+        token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas")
+        uploaded = st.file_uploader("📂 Sube tu archivo KML o RTF", type=["kml","rtf","txt"])
+        if uploaded:
+            text = decode_file(uploaded.read())
+            if text.strip().startswith("{\\rtf") or "\\rtf" in text[:100]:
+                text = strip_rtf_codes(text)
+            polygons = parse_polygons(text)
+            if not polygons:
+                st.warning("No se encontraron polígonos."); return
+            st.success(f"✅ {len(polygons)} polígono(s)")
+            for p in polygons:
+                with st.expander(f"📍 {p['name']} — {len(p['coords'])} puntos"):
+                    st.code(coords_to_str(p["coords"][:3]) + ",...]")
+            st.download_button("⬇️ Descargar Excel", data=generate_excel_zones(polygons), file_name="ZONES.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.divider()
+            if not token:
+                st.warning("⚠️ Ingresa tu token para cargar zonas.")
+            elif st.button("🚀 Cargar zonas", type="primary"):
+                prog = st.progress(0); status = st.empty()
+                for i, p in enumerate(polygons):
+                    status.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
+                    try:
+                        r = requests.post("http://api.simpliroute.com/v1/zones/",
+                                          headers={"authorization":f"Token {token}","content-type":"application/json"},
+                                          json={"name":p["name"],"coordinates":coords_to_str(p["coords"]),"vehicles":[]}, timeout=15)
+                        code = r.status_code
+                    except:
+                        code = None
+                    if code in [200,201]: st.success(f"✅ {p['name']}")
+                    elif code == 400: st.warning(f"⚠️ {p['name']} — Ya existe")
+                    elif code == 401: st.error(f"❌ {p['name']} — Token inválido")
+                    else: st.error(f"❌ {p['name']} — Error {code}")
+                    prog.progress((i+1)/len(polygons))
+                status.empty(); prog.empty()
+
+    with tab2:
+        st.error("⚠️ **ADVERTENCIA:** La eliminación de zonas es permanente y no se puede deshacer.")
+        token_del = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas_del")
+        st.caption("Pega los IDs de zona uno por línea:\n```\n12345\n12346\n```")
+        zone_ids_raw = st.text_area("IDs de zona", placeholder="12345\n12346", height=180, label_visibility="collapsed", key="zone_ids_del")
+        confirm_del = st.checkbox("✅ Confirmo que quiero eliminar estas zonas de forma permanente", key="confirm_zonas_del")
+        if st.button("🗑️ Eliminar Zonas", type="primary", disabled=not (token_del and zone_ids_raw and confirm_del)):
+            zone_ids = []
+            for l in zone_ids_raw.strip().splitlines():
+                l = l.strip()
+                if not l: continue
+                try: zone_ids.append(int(l))
+                except: st.warning(f"⚠️ ID inválido ignorado: {l}")
+            if not zone_ids: st.error("❌ No se encontraron IDs válidos."); return
+            prog = st.progress(0); status = st.empty()
+            ok_count = 0; err_count = 0
+            for i, zid in enumerate(zone_ids):
+                status.info(f"Eliminando zona **{zid}** ({i+1}/{len(zone_ids)})...")
+                try:
+                    r = requests.delete(f"http://api.simpliroute.com/v1/zones/{zid}",
+                                        headers={"authorization": f"Token {token_del}", "accept": "application/json"}, timeout=30)
+                    code = r.status_code
+                except Exception as e:
+                    st.error(f"❌ **{zid}** — Error: {e}"); err_count += 1; prog.progress((i+1)/len(zone_ids)); continue
+                if code in [200, 204]: st.success(f"✅ Zona **{zid}** eliminada"); ok_count += 1
+                elif code == 401: st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+                elif code == 404: st.warning(f"⚠️ **{zid}** — No encontrada")
+                else: st.error(f"❌ **{zid}** — Error {code}"); err_count += 1
+                prog.progress((i+1)/len(zone_ids))
+            status.empty(); prog.empty()
+            st.divider()
+            if err_count == 0: st.success(f"✅ Completado — **{ok_count} zonas eliminadas**")
+            else: st.warning(f"⚠️ Completado con errores — **{ok_count} eliminadas**, {err_count} con error")
 
 
 # ── FEATURE: CAMBIAR ROL ──────────────────────────────────────────────────────
@@ -1221,7 +1298,7 @@ def page_tms_document_types():
         ws.append(["name","entity_type"]); ws.append(["DNI","driver"]); ws.append(["RUC","provider"])
         ws.column_dimensions["A"].width=25; ws.column_dimensions["B"].width=25
         buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Descargar plantilla", data=tpl(), file_name="plantilla_tipos_documento.xlsx",
+    st.download_button("📥 Plantilla", data=tpl(), file_name="plantilla_tipos_documento.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     doc_file = st.file_uploader("📂 Excel", type=["xlsx"], key="upload_doctype")
     if doc_file:
@@ -1257,7 +1334,7 @@ def page_tms_transportistas():
         ws.append(["Transportes Sur S.A.","Transportes Sur Sociedad Anónima","20123456789"])
         ws.column_dimensions["A"].width=30; ws.column_dimensions["B"].width=35; ws.column_dimensions["C"].width=20
         buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Descargar plantilla", data=tpl(), file_name="plantilla_transportistas.xlsx",
+    st.download_button("📥 Plantilla", data=tpl(), file_name="plantilla_transportistas.xlsx",
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     tf = st.file_uploader("📂 Excel", type=["xlsx"], key="upload_transp")
     if tf:
@@ -1284,8 +1361,8 @@ def page_tms_transportistas():
 
 # ── ROUTER ────────────────────────────────────────────────────────────────────
 if selected == "🧑‍💼 Agregar Seller a Visitas":     page_agregar_seller()
-elif selected == "🚛 Asignación de Flotas":          page_asignacion_flotas()
-elif selected == "🗺️ Cargar Zonas":                  page_cargar_zonas()
+elif selected == "🚛 Flotas":                        page_flotas()
+elif selected == "🗺️ Zonas":                         page_zonas()
 elif selected == "👤 Cambiar Rol de Usuario":         page_cambiar_rol()
 elif selected == "⚙️ Configurar Addons":             page_configurar_addons()
 elif selected == "🔔 Crear Webhook":                 page_crear_webhook()
