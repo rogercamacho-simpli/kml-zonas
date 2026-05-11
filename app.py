@@ -46,8 +46,8 @@ selected = st.session_state["current_page"]
 
 def nav_item(label):
     is_active = st.session_state["current_page"] == label
-    if st.sidebar.button(label, key=f"nav_{label}", use_container_width=True,
-                         type="primary" if is_active else "secondary"):
+    if st.button(label, key=f"nav_{label}", use_container_width=True,
+                 type="primary" if is_active else "secondary"):
         for key in list(st.session_state.keys()):
             if key != "current_page":
                 del st.session_state[key]
@@ -67,7 +67,6 @@ with st.sidebar:
     st.markdown("---")
     st.caption("SimpliRoute Internal Tools v1.0")
 
-selected = st.session_state["current_page"]
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
 def haversine_m(lat1, lon1, lat2, lon2):
