@@ -702,7 +702,10 @@ def page_zonas():
                 status.empty(); prog.empty()
                 st.divider()
                 if err_count == 0: st.success(f"✅ Completado — **{ok_count} zonas copiadas**")
-                else: st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error") y no se puede deshacer.")
+                else: st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error")
+
+    with tab2:
+        st.error("⚠️ **ADVERTENCIA:** La eliminación de zonas es permanente y no se puede deshacer.")
         token_del = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas_del")
         st.caption("Pega los IDs de zona uno por línea:\n```\n12345\n12346\n```")
         zone_ids_raw = st.text_area("IDs de zona", placeholder="12345\n12346", height=180,
