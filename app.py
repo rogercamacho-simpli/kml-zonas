@@ -29,6 +29,7 @@ MENU_GROUPS = [
     ("⚙️ Configuración", [
         "👤 Cambiar Rol de Usuario",
         "⚙️ Configurar Addons",
+        "⚙️ Copiar Configs",
         "🔔 Crear Webhook",
         "🔓 Desbloqueo de Contraseña",
         "🔍 Permisos de Usuario",
@@ -205,6 +206,65 @@ MASTER_ADDONS = [
     {"key": "visit_card_additional_data", "title": "Visit Card Additional Data",   "description": "visit_card_additional_data",   "logo": "-"},
     {"key": "roles",                      "title": "Roles Personalizados",         "description": "roles",                        "logo": ""},
 ]
+
+
+# ── FEATURE: COPIAR CONFIGS ───────────────────────────────────────────────────
+def page_copiar_configs():
+    st.title("⚙️ Copiar Configs")
+    st.markdown("Copia las configuraciones de una cuenta origen a una cuenta destino.")
+
+    col1, col2 = st.columns(2)
+    with col1: token_origen  = st.text_input("🔑 Token cuenta origen",  type="password", key="token_configs_origen")
+    with col2: token_destino = st.text_input("🔑 Token cuenta destino", type="password", key="token_configs_destino")
+
+    if st.button("🔍 Consultar configs", type="primary", disabled=not token_origen, key="btn_consultar_configs"):
+        try:
+            r = requests.get("http://api.simpliroute.com/v1/accounts/configs/",
+                             headers={"Authorization": f"Token {token_origen}", "Content-Type": "application/json"}, timeout=30)
+            if r.status_code == 401: st.error("❌ Token inválido"); return
+            if r.status_code != 200: st.error(f"❌ Error {r.status_code}"); return
+            st.session_state["configs_origen"] = r.json()
+        except Exception as e:
+            st.error(f"❌ Error: {e}"); return
+
+    if "configs_origen" in st.session_state:
+        configs = st.session_state["configs_origen"]
+        st.success(f"✅ {len(configs)} configuración(es) encontradas")
+        st.divider()
+
+        with st.expander("👁️ Ver configuraciones"):
+            for c in configs:
+                st.markdown(f"- `{c['key']}` → **{c['value']}** *(is_public: {c['is_public']})*")
+
+        st.divider()
+        if st.button("🚀 Copiar configs", type="primary",
+                     disabled=not token_destino, key="btn_copiar_configs"):
+            prog = st.progress(0); status = st.empty()
+            ok_count = 0; err_count = 0
+            for i, config in enumerate(configs):
+                status.info(f"Copiando: **{config['key']}** ({i+1}/{len(configs)})")
+                payload = {
+                    "key":          config["key"],
+                    "value":        config["value"],
+                    "string_value": "false",
+                    "is_public":    config["is_public"],
+                }
+                try:
+                    r = requests.post("http://api.simpliroute.com/v1/accounts/configs/",
+                                      headers={"Authorization": f"Token {token_destino}", "Content-Type": "application/json"},
+                                      json=payload, timeout=15)
+                    code = r.status_code
+                except Exception as e:
+                    st.error(f"❌ **{config['key']}** — Error: {e}"); err_count += 1
+                    prog.progress((i+1)/len(configs)); continue
+                if code in [200, 201]: ok_count += 1
+                elif code == 401: st.error("❌ Token destino inválido."); status.empty(); prog.empty(); return
+                else: st.error(f"❌ **{config['key']}** — Error {code}"); err_count += 1
+                prog.progress((i+1)/len(configs))
+            status.empty(); prog.empty()
+            st.divider()
+            if err_count == 0: st.success(f"✅ Completado — **{ok_count} configs copiadas**")
+            else: st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error")
 
 
 # ── FEATURE: CONFIGURAR ADDONS ────────────────────────────────────────────────
@@ -1507,6 +1567,7 @@ elif selected == "🚛 Flotas":                        page_flotas()
 elif selected == "🗺️ Zonas":                         page_zonas()
 elif selected == "🔍 Permisos de Usuario":           page_permisos_usuario()
 elif selected == "👤 Cambiar Rol de Usuario":         page_cambiar_rol()
+elif selected == "⚙️ Copiar Configs":                page_copiar_configs()
 elif selected == "⚙️ Configurar Addons":             page_configurar_addons()
 elif selected == "🔔 Crear Webhook":                 page_crear_webhook()
 elif selected == "🔓 Desbloqueo de Contraseña":      page_desbloqueo()
