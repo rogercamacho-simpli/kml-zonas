@@ -259,10 +259,24 @@ def page_copiar_configs():
 
         if st.button("🚀 Copiar configs", type="primary",
                      disabled=not (token_destino and seleccionadas), key="btn_copiar_configs"):
+            # 1. Consultar configs del destino
+            try:
+                rd = requests.get("http://api.simpliroute.com/v1/accounts/configs/",
+                                  headers={"Authorization": f"Token {token_destino}", "Content-Type": "application/json"}, timeout=30)
+                if rd.status_code == 401: st.error("❌ Token destino inválido"); return
+                if rd.status_code != 200: st.error(f"❌ Error consultando destino: {rd.status_code}"); return
+                keys_destino = {c["key"] for c in rd.json()}
+            except Exception as e:
+                st.error(f"❌ Error consultando cuenta destino: {e}"); return
+
             prog = st.progress(0); status = st.empty()
-            ok_count = 0; err_count = 0
+            ok_count = 0; skip_count = 0; err_count = 0
             for i, config in enumerate(seleccionadas):
-                status.info(f"Copiando: **{config['key']}** ({i+1}/{len(seleccionadas)})")
+                status.info(f"Procesando: **{config['key']}** ({i+1}/{len(seleccionadas)})")
+                if config["key"] in keys_destino:
+                    st.warning(f"⏭️ **{config['key']}** — Ya existe, omitida")
+                    skip_count += 1
+                    prog.progress((i+1)/len(seleccionadas)); continue
                 payload = {
                     "key":          config["key"],
                     "value":        config["value"],
@@ -283,8 +297,7 @@ def page_copiar_configs():
                 prog.progress((i+1)/len(seleccionadas))
             status.empty(); prog.empty()
             st.divider()
-            if err_count == 0: st.success(f"✅ Completado — **{ok_count} configs copiadas**")
-            else: st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error")
+            st.success(f"✅ **{ok_count} copiadas** · ⏭️ **{skip_count} omitidas** · ❌ **{err_count} con error**")
 
 
 # ── FEATURE: CONFIGURAR ADDONS ────────────────────────────────────────────────
