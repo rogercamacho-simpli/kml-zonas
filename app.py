@@ -326,12 +326,12 @@ def page_configurar_addons():
 # ── FEATURE: PERMISOS DE USUARIO ─────────────────────────────────────────────
 PERMISOS_AMIGABLES = {
     "reports.edit":                               "📊 Reportes",
-    "watchtower.tracking.edit":                   "🗺️ Seguimiento",
-    "watchtower.visits.edit":                     "📍 Mis Visitas",
+    "watchtower.tracking.edit":                   "🗺️ Watch Tower - Tracking",
+    "watchtower.visits.edit":                     "📍 Watch Tower - Visitas",
     "settings.communications.live_tracking.edit": "📡 Comunicaciones",
     "settings.communications.wsp_pro.edit":       "💬 WhatsApp Pro",
-    "clients.edit":                               "👥 Mis Clientes",
-    "chat.edit":                                  "💬 Simpli Chat",
+    "clients.edit":                               "👥 Clientes",
+    "chat.edit":                                  "💬 Chat",
     "ada.edit":                                   "🤖 Ada",
     "forcefield.edit":                            "🛡️ ForceField",
     "settings.vehicles.edit":                     "🚗 Vehículos",
@@ -605,7 +605,7 @@ def page_flotas():
 # ── FEATURE: ZONAS ────────────────────────────────────────────────────────────
 def page_zonas():
     st.title("🗺️ Zonas")
-    tab1, tab2 = st.tabs(["📂 Cargar Zonas", "🗑️ Eliminar Zonas"])
+    tab1, tab2, tab3 = st.tabs(["📂 Cargar Zonas", "🗑️ Eliminar Zonas", "📋 Copiar Zonas"])
 
     with tab1:
         token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas")
@@ -643,8 +643,66 @@ def page_zonas():
                     prog.progress((i+1)/len(polygons))
                 status.empty(); prog.empty()
 
-    with tab2:
-        st.error("⚠️ **ADVERTENCIA:** La eliminación de zonas es permanente y no se puede deshacer.")
+    with tab3:
+        st.markdown("Consulta las zonas de una cuenta origen y cópialas a una cuenta destino.")
+        col1, col2 = st.columns(2)
+        with col1: token_origen = st.text_input("🔑 Token cuenta origen", type="password", key="token_zonas_origen")
+        with col2: token_destino = st.text_input("🔑 Token cuenta destino", type="password", key="token_zonas_destino")
+
+        if st.button("🔍 Consultar zonas", type="primary", disabled=not token_origen, key="btn_consultar_zonas"):
+            try:
+                r = requests.get("http://api.simpliroute.com/v1/zones/",
+                                 headers={"authorization": f"Token {token_origen}", "content-type": "application/json"}, timeout=30)
+                if r.status_code == 401: st.error("❌ Token inválido"); return
+                if r.status_code != 200: st.error(f"❌ Error {r.status_code}"); return
+                st.session_state["zonas_origen"] = r.json()
+            except Exception as e:
+                st.error(f"❌ Error: {e}"); return
+
+        if "zonas_origen" in st.session_state:
+            zonas = st.session_state["zonas_origen"]
+            st.success(f"✅ {len(zonas)} zona(s) encontradas")
+            st.divider()
+            st.markdown("**Selecciona las zonas a copiar:**")
+
+            seleccionadas = []
+            cols = st.columns(2)
+            for i, zona in enumerate(zonas):
+                with cols[i % 2]:
+                    if st.checkbox(f"📍 {zona['name']}", key=f"zona_check_{zona['id']}"):
+                        seleccionadas.append(zona)
+
+            st.divider()
+            if seleccionadas:
+                st.info(f"**{len(seleccionadas)} zona(s) seleccionadas** para copiar")
+
+            if st.button("🚀 Copiar zonas", type="primary",
+                         disabled=not (token_destino and seleccionadas), key="btn_copiar_zonas"):
+                prog = st.progress(0); status = st.empty()
+                ok_count = 0; err_count = 0
+                for i, zona in enumerate(seleccionadas):
+                    status.info(f"Copiando: **{zona['name']}** ({i+1}/{len(seleccionadas)})")
+                    coords = zona.get("coordinates", [])
+                    coords_str = "[" + ",".join(
+                        f"{{'lat':'{p['lat']}','lng':'{p['lng']}'}}" for p in coords
+                    ) + "]"
+                    try:
+                        r = requests.post("http://api.simpliroute.com/v1/zones/",
+                                          headers={"authorization": f"Token {token_destino}", "content-type": "application/json"},
+                                          json={"name": zona["name"], "coordinates": coords_str, "vehicles": []}, timeout=15)
+                        code = r.status_code
+                    except Exception as e:
+                        st.error(f"❌ **{zona['name']}** — Error: {e}"); err_count += 1
+                        prog.progress((i+1)/len(seleccionadas)); continue
+                    if code in [200, 201]: st.success(f"✅ {zona['name']}"); ok_count += 1
+                    elif code == 400: st.warning(f"⚠️ {zona['name']} — Ya existe")
+                    elif code == 401: st.error("❌ Token destino inválido."); status.empty(); prog.empty(); return
+                    else: st.error(f"❌ {zona['name']} — Error {code}"); err_count += 1
+                    prog.progress((i+1)/len(seleccionadas))
+                status.empty(); prog.empty()
+                st.divider()
+                if err_count == 0: st.success(f"✅ Completado — **{ok_count} zonas copiadas**")
+                else: st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error") y no se puede deshacer.")
         token_del = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_zonas_del")
         st.caption("Pega los IDs de zona uno por línea:\n```\n12345\n12346\n```")
         zone_ids_raw = st.text_area("IDs de zona", placeholder="12345\n12346", height=180,
