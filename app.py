@@ -229,20 +229,39 @@ def page_copiar_configs():
 
     if "configs_origen" in st.session_state:
         configs = st.session_state["configs_origen"]
-        st.success(f"✅ {len(configs)} configuración(es) encontradas")
+        configs_activas = [c for c in configs if c["value"] is not False and c["value"] != False and str(c["value"]).lower() != "false"]
+        st.success(f"✅ {len(configs_activas)} configuración(es) activas (value ≠ false)")
         st.divider()
 
-        with st.expander("👁️ Ver configuraciones"):
-            for c in configs:
-                st.markdown(f"- `{c['key']}` → **{c['value']}** *(is_public: {c['is_public']})*")
+        col_sel, col_desel = st.columns(2)
+        with col_sel:
+            if st.button("☑️ Seleccionar todas", key="sel_todas_configs", use_container_width=True):
+                for c in configs_activas:
+                    st.session_state[f"cfg_check_{c['key']}"] = True
+        with col_desel:
+            if st.button("🔲 Deseleccionar todas", key="desel_todas_configs", use_container_width=True):
+                for c in configs_activas:
+                    st.session_state[f"cfg_check_{c['key']}"] = False
+
+        st.markdown("**Selecciona las configs a copiar:**")
+        seleccionadas = []
+        cols = st.columns(2)
+        for i, c in enumerate(configs_activas):
+            with cols[i % 2]:
+                checked = st.checkbox(f"`{c['key']}` → **{c['value']}**", key=f"cfg_check_{c['key']}")
+                if checked:
+                    seleccionadas.append(c)
 
         st.divider()
+        if seleccionadas:
+            st.info(f"**{len(seleccionadas)} config(s) seleccionadas** para copiar")
+
         if st.button("🚀 Copiar configs", type="primary",
-                     disabled=not token_destino, key="btn_copiar_configs"):
+                     disabled=not (token_destino and seleccionadas), key="btn_copiar_configs"):
             prog = st.progress(0); status = st.empty()
             ok_count = 0; err_count = 0
-            for i, config in enumerate(configs):
-                status.info(f"Copiando: **{config['key']}** ({i+1}/{len(configs)})")
+            for i, config in enumerate(seleccionadas):
+                status.info(f"Copiando: **{config['key']}** ({i+1}/{len(seleccionadas)})")
                 payload = {
                     "key":          config["key"],
                     "value":        config["value"],
@@ -256,11 +275,11 @@ def page_copiar_configs():
                     code = r.status_code
                 except Exception as e:
                     st.error(f"❌ **{config['key']}** — Error: {e}"); err_count += 1
-                    prog.progress((i+1)/len(configs)); continue
+                    prog.progress((i+1)/len(seleccionadas)); continue
                 if code in [200, 201]: ok_count += 1
                 elif code == 401: st.error("❌ Token destino inválido."); status.empty(); prog.empty(); return
                 else: st.error(f"❌ **{config['key']}** — Error {code}"); err_count += 1
-                prog.progress((i+1)/len(configs))
+                prog.progress((i+1)/len(seleccionadas))
             status.empty(); prog.empty()
             st.divider()
             if err_count == 0: st.success(f"✅ Completado — **{ok_count} configs copiadas**")
