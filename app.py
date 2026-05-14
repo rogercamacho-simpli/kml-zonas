@@ -229,7 +229,8 @@ def page_copiar_configs():
 
     if "configs_origen" in st.session_state:
         configs = st.session_state["configs_origen"]
-        configs_activas = [c for c in configs if c["value"] not in [False, None, "", "false"]]
+        KEYS_EXCLUIDAS = {"routing_sources_provider"}
+        configs_activas = [c for c in configs if c["value"] not in [False, None, "", "false"] and c["key"] not in KEYS_EXCLUIDAS]
         st.success(f"✅ {len(configs_activas)} configuración(es) activas (value ≠ false)")
         st.divider()
 
