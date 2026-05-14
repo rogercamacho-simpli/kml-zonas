@@ -665,6 +665,16 @@ def page_zonas():
             st.divider()
             st.markdown("**Selecciona las zonas a copiar:**")
 
+            col_sel, col_desel = st.columns(2)
+            with col_sel:
+                if st.button("☑️ Seleccionar todas", key="sel_todas", use_container_width=True):
+                    for zona in zonas:
+                        st.session_state[f"zona_check_{zona['id']}"] = True
+            with col_desel:
+                if st.button("🔲 Deseleccionar todas", key="desel_todas", use_container_width=True):
+                    for zona in zonas:
+                        st.session_state[f"zona_check_{zona['id']}"] = False
+
             seleccionadas = []
             cols = st.columns(2)
             for i, zona in enumerate(zonas):
