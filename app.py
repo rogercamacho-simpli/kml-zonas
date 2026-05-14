@@ -229,7 +229,7 @@ def page_copiar_configs():
 
     if "configs_origen" in st.session_state:
         configs = st.session_state["configs_origen"]
-        configs_activas = [c for c in configs if c["value"] is not False and c["value"] != False and str(c["value"]).lower() != "false"]
+        configs_activas = [c for c in configs if c["value"] not in [False, None, "", "false"]]
         st.success(f"✅ {len(configs_activas)} configuración(es) activas (value ≠ false)")
         st.divider()
 
