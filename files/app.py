@@ -1,10 +1,10 @@
 import streamlit as st
 
-from pages.visitas       import page_agregar_seller, page_edicion_visitas, page_eliminacion_visitas, page_visit_types_skills
-from pages.rutas         import page_flotas, page_iniciar_cerrar_rutas, page_zonas
-from pages.gps           import page_analisis_gps, page_validacion_gps
-from pages.configuracion import page_cambiar_rol, page_configurar_addons, page_copiar_configs, page_crear_webhook, page_desbloqueo, page_permisos_usuario, page_reenviar_webhooks
-from pages.tms           import page_tms_document_types, page_tms_transportistas
+from modules.visitas       import page_agregar_seller, page_edicion_visitas, page_eliminacion_visitas, page_visit_types_skills
+from modules.rutas         import page_flotas, page_iniciar_cerrar_rutas, page_zonas
+from modules.gps           import page_analisis_gps, page_validacion_gps
+from modules.configuracion import page_cambiar_rol, page_configurar_addons, page_copiar_configs, page_crear_webhook, page_desbloqueo, page_permisos_usuario, page_reenviar_webhooks
+from modules.tms           import page_tms_document_types, page_tms_transportistas
 
 APP_VERSION = "2.0.0"
 
