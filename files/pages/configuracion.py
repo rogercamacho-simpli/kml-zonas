@@ -1,9 +1,10 @@
 import streamlit as st
 import json
+import time
 import requests
 from datetime import date
 
-from utils.api import sr_get, sr_post, sr_put, get_users_list, put_user_full, API_BASE, API_GW
+from utils.api import sr_get, sr_post, sr_put, get_users_list, put_user_full, API_GW
 
 APP_VERSION = "2.0.0"
 
@@ -118,9 +119,9 @@ def page_cambiar_rol():
         cl, ck = get_current_role(user)
         st.divider()
         c1, c2, c3 = st.columns(3)
-        c1.markdown(f"**Nombre**<br>{user.get('name','—')}",     unsafe_allow_html=True)
+        c1.markdown(f"**Nombre**<br>{user.get('name','—')}",      unsafe_allow_html=True)
         c2.markdown(f"**Username**<br>{user.get('username','—')}", unsafe_allow_html=True)
-        c3.markdown(f"**Rol actual**<br>{cl}",                    unsafe_allow_html=True)
+        c3.markdown(f"**Rol actual**<br>{cl}",                     unsafe_allow_html=True)
         st.caption(f"📧 {user.get('email','—')} · {user.get('status','—')}")
         st.divider()
         if ck == "is_owner":
@@ -132,12 +133,10 @@ def page_cambiar_rol():
                 payload = {k: (k == nuevo_key) for k in ALL_ROLE_KEYS}
                 payload["username"] = user.get("username", "")
                 payload["name"]     = user.get("name", "")
-                code, _ = sr_put(f"/v1/accounts/users/{user['id']}/",
-                                 st.session_state["user_token"], payload)
+                code, _ = sr_put(f"/v1/accounts/users/{user['id']}/", st.session_state["user_token"], payload)
                 if code == 200:
                     st.success(f"✅ Rol actualizado a **{nuevo_label}**")
-                    code2, resp2 = sr_get(f"/v1/accounts/users/{user['id']}/",
-                                          st.session_state["user_token"])
+                    code2, resp2 = sr_get(f"/v1/accounts/users/{user['id']}/", st.session_state["user_token"])
                     if code2 == 200: st.session_state["user_data"] = resp2
                     st.rerun()
                 else:
@@ -156,8 +155,7 @@ def page_configurar_addons():
             st.session_state["addons_data"]    = resp
             st.session_state["addons_token"]   = token
             st.session_state["addons_account"] = acc_id
-        elif code == 401:
-            st.error("❌ Token inválido")
+        elif code == 401: st.error("❌ Token inválido")
         else:
             st.error(f"❌ Error {code}")
             st.session_state.pop("addons_data", None)
@@ -180,7 +178,7 @@ def page_configurar_addons():
             color_borde  = "#1D9E75" if estado else "#E24B4A"
             status_color = "#0F6E56" if estado else "#A32D2D"
             badge_bg     = "#E1F5EE" if estado else "#FCEBEB"
-            estado_txt   = "✅ Activo" if estado else "🔴 Inactivo"
+            estado_txt   = "✅ Activo"    if estado else "🔴 Inactivo"
             btn_label    = "🔴 Desactivar" if estado else "🟢 Activar"
             with cols[idx % 3]:
                 st.markdown(
@@ -201,7 +199,7 @@ def page_configurar_addons():
                             if a["id"] == addon["id"]: a["enable"] = new_val
                         st.rerun()
                     elif code == 401: st.error("❌ Token inválido")
-                    else: st.error(f"❌ Error {code}")
+                    else:             st.error(f"❌ Error {code}")
 
         missing = [m for m in MASTER_ADDONS if m["key"] not in existing_keys]
         if missing:
@@ -230,10 +228,9 @@ def page_configurar_addons():
                             code2, data2 = sr_get("/v1/addons/addons/", tok)
                             if code2 == 200: st.session_state["addons_data"] = data2
                             st.rerun()
-                        elif code == 403:
-                            st.error("❌ Error 403 — Solo un usuario Staff puede agregar addons.")
+                        elif code == 403: st.error("❌ Error 403 — Solo un usuario Staff puede agregar addons.")
                         elif code == 401: st.error("❌ Token inválido")
-                        else: st.error(f"❌ Error {code}: {post_resp}")
+                        else:             st.error(f"❌ Error {code}: {post_resp}")
         else:
             st.divider()
             st.info("✅ La cuenta tiene todos los addons del catálogo configurados.")
@@ -248,9 +245,9 @@ def page_copiar_configs():
 
     if st.button("🔍 Consultar configs", type="primary", disabled=not token_origen, key="btn_consultar_configs"):
         code, data = sr_get("/v1/accounts/configs/", token_origen)
-        if code == 401: st.error("❌ Token inválido")
+        if code == 401:   st.error("❌ Token inválido")
         elif code != 200: st.error(f"❌ Error {code}")
-        else: st.session_state["configs_origen"] = data
+        else:             st.session_state["configs_origen"] = data
 
     if "configs_origen" in st.session_state:
         configs = st.session_state["configs_origen"]
@@ -287,15 +284,19 @@ def page_copiar_configs():
 
             prog = st.progress(0); status = st.empty()
             ok_count = skip_count = err_count = 0
+            start_time = time.time()
             for i, config in enumerate(seleccionadas):
-                status.info(f"Procesando: **{config['key']}** ({i+1}/{len(seleccionadas)})")
+                elapsed = time.time() - start_time
+                rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                eta     = (len(seleccionadas) - (i + 1)) / rate
+                status.info(f"Procesando: **{config['key']}** ({i+1}/{len(seleccionadas)}) — ETA: {int(eta)}s")
                 if config["key"] in keys_destino:
                     st.warning(f"⏭️ **{config['key']}** — Ya existe, omitida")
                     skip_count += 1; prog.progress((i+1)/len(seleccionadas)); continue
                 payload = {"key": config["key"], "value": config["value"],
                            "string_value": "false", "is_public": config["is_public"]}
                 code, _ = sr_post("/v1/accounts/configs/", token_destino, payload)
-                if code in [200, 201]: ok_count += 1
+                if code in [200, 201]:  ok_count += 1
                 elif code == 401: st.error("❌ Token destino inválido."); status.empty(); prog.empty(); return
                 else: st.error(f"❌ **{config['key']}** — Error {code}"); err_count += 1
                 prog.progress((i+1)/len(seleccionadas))
@@ -306,10 +307,10 @@ def page_copiar_configs():
 
 def page_crear_webhook():
     st.title("🔔 Crear Webhook")
-    token     = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_webhook")
-    url       = st.text_input("🌐 URL de destino", placeholder="https://tu-servidor.com/webhook")
+    token      = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_webhook")
+    url        = st.text_input("🌐 URL de destino", placeholder="https://tu-servidor.com/webhook")
     evento_key = WEBHOOK_EVENTS[st.selectbox("📋 Tipo de evento", list(WEBHOOK_EVENTS.keys()))]
-    custom    = st.checkbox("Usar header personalizado")
+    custom     = st.checkbox("Usar header personalizado")
     if custom:
         raw = st.text_area("Header JSON",
                            value='{\n    "Content-Type": "application/json",\n    "X-Custom": "valor"\n}',
@@ -326,8 +327,8 @@ def page_crear_webhook():
         code, resp = sr_post("/v1/addons/webhooks/", token,
                              {"webhook": evento_key, "url": url, "headers": headers_payload})
         if code in [200, 201]: st.success("✅ Webhook creado"); st.json(resp)
-        elif code == 401: st.error("❌ Token inválido")
-        else: st.error(f"❌ Error {code}: {resp}")
+        elif code == 401:      st.error("❌ Token inválido")
+        else:                  st.error(f"❌ Error {code}: {resp}")
 
 
 def page_desbloqueo():
@@ -485,6 +486,6 @@ def page_reenviar_webhooks():
                               {"account_ids": [int(account_id)], "planned_date": today, "visit_ids": ids},
                               base="https://api.simpliroute.com", timeout=60)
         if code in [200, 201]: st.success(f"✅ Webhooks reenviados para {len(ids)} visitas")
-        elif code == 401: st.error("❌ Token inválido")
-        elif code == 404: st.error("❌ Cuenta no encontrada")
-        else: st.error(f"❌ Error {code}")
+        elif code == 401:      st.error("❌ Token inválido")
+        elif code == 404:      st.error("❌ Cuenta no encontrada")
+        else:                  st.error(f"❌ Error {code}")

@@ -1,11 +1,18 @@
 import streamlit as st
 import openpyxl
 import io
-import requests
+import time
 from datetime import date
 
 from utils.helpers import read_excel_column, show_results, mask_token
 from utils.api import sr_get, sr_post, sr_patch
+
+
+def _eta_status(status, i, total, start_time, label):
+    elapsed = time.time() - start_time
+    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+    eta     = (total - (i + 1)) / rate
+    status.info(f"{label} ({i+1}/{total}) — ETA: {int(eta)}s")
 
 
 def page_agregar_seller():
@@ -95,33 +102,30 @@ def page_edicion_visitas():
         visit_ids = []
         for l in visit_ids_raw.strip().splitlines():
             l = l.strip()
-            if not l:
-                continue
-            try:
-                visit_ids.append(int(l))
-            except:
-                st.warning(f"⚠️ ID inválido ignorado: {l}")
+            if not l: continue
+            try: visit_ids.append(int(l))
+            except: st.warning(f"⚠️ ID inválido ignorado: {l}")
         if not visit_ids:
             st.error("❌ No se encontraron IDs válidos.")
             return
 
         def build_payload(vid):
             p = {"id": vid}
-            if date_action == "Asignar nueva fecha":
-                p["planned_date"] = new_date.strftime("%Y-%m-%d")
-            elif date_action == "Eliminar fecha":
-                p["planned_date"] = None
-            if route_action == "Asignar ruta":
-                p["route"] = new_route.strip()
-            elif route_action == "Eliminar ruta":
-                p["route"] = None
+            if date_action == "Asignar nueva fecha": p["planned_date"] = new_date.strftime("%Y-%m-%d")
+            elif date_action == "Eliminar fecha":    p["planned_date"] = None
+            if route_action == "Asignar ruta":       p["route"] = new_route.strip()
+            elif route_action == "Eliminar ruta":    p["route"] = None
             return p
 
         prog = st.progress(0); status = st.empty()
         ok_count = 0; err_count = 0
-        batches = [visit_ids[i:i+500] for i in range(0, len(visit_ids), 500)]
+        batches    = [visit_ids[i:i+500] for i in range(0, len(visit_ids), 500)]
+        start_time = time.time()
         for i, batch in enumerate(batches):
-            status.info(f"Editando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({ok_count} editadas)")
+            elapsed = time.time() - start_time
+            rate    = (i + 1) / elapsed if elapsed > 0 else 1
+            eta     = (len(batches) - (i + 1)) / rate
+            status.info(f"Editando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({ok_count} editadas) — ETA: {int(eta)}s")
             code, _ = sr_patch("/v1/routes/visits/", token, [build_payload(vid) for vid in batch], timeout=300)
             if code in [200, 201]:
                 ok_count += len(batch)
@@ -133,10 +137,8 @@ def page_edicion_visitas():
             prog.progress((i+1)/len(batches))
         status.empty(); prog.empty()
         st.divider()
-        if err_count == 0:
-            st.success(f"✅ Completado — **{ok_count} visitas editadas**")
-        else:
-            st.warning(f"⚠️ Completado con errores — **{ok_count} editadas**, {err_count} lote(s) fallido(s)")
+        if err_count == 0: st.success(f"✅ Completado — **{ok_count} visitas editadas**")
+        else: st.warning(f"⚠️ Completado con errores — **{ok_count} editadas**, {err_count} lote(s) fallido(s)")
 
 
 def page_eliminacion_visitas():
@@ -159,33 +161,30 @@ def page_eliminacion_visitas():
         try:
             wb = openpyxl.load_workbook(visits_file); ws = wb.active
             headers = [str(c.value).strip() if c.value else "" for c in ws[1]]
-            if "id" not in headers:
-                st.error("❌ El Excel debe tener columna 'id'.")
-                return
+            if "id" not in headers: st.error("❌ El Excel debe tener columna 'id'."); return
             idx = headers.index("id")
             visit_ids = []
             for row in ws.iter_rows(min_row=2, values_only=True):
                 val = row[idx] if idx < len(row) else None
                 if val is not None:
-                    try:
-                        visit_ids.append(int(val))
-                    except:
-                        pass
-            if not visit_ids:
-                st.error("❌ No se encontraron IDs.")
-                return
+                    try: visit_ids.append(int(val))
+                    except: pass
+            if not visit_ids: st.error("❌ No se encontraron IDs."); return
             st.info(f"📋 **{len(visit_ids)} visitas** cargadas. Se procesarán en lotes de 2,000.")
         except Exception as e:
-            st.error(f"❌ Error: {e}")
-            return
+            st.error(f"❌ Error: {e}"); return
 
         confirm = st.checkbox("✅ Confirmo que quiero eliminar estas visitas de forma permanente")
         if confirm and st.button("🗑️ Eliminar visitas", type="primary", disabled=not token):
-            batches = [visit_ids[i:i+2000] for i in range(0, len(visit_ids), 2000)]
+            batches    = [visit_ids[i:i+2000] for i in range(0, len(visit_ids), 2000)]
             prog = st.progress(0); status = st.empty()
             total_deleted = 0; errors = 0
+            start_time = time.time()
             for i, batch in enumerate(batches):
-                status.info(f"Procesando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({total_deleted} eliminadas)")
+                elapsed = time.time() - start_time
+                rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                eta     = (len(batches) - (i + 1)) / rate
+                status.info(f"Procesando lote {i+1}/{len(batches)} — {len(batch)} visitas... ({total_deleted} eliminadas) — ETA: {int(eta)}s")
                 code, _ = sr_post("/v1/bulk/delete/visits/", token, {"visits": batch}, timeout=300)
                 if code in [200, 201, 204]:
                     total_deleted += len(batch)
@@ -197,10 +196,8 @@ def page_eliminacion_visitas():
                 prog.progress((i+1)/len(batches))
             status.empty(); prog.empty()
             st.divider()
-            if errors == 0:
-                st.success(f"✅ Completado — **{total_deleted} visitas eliminadas**")
-            else:
-                st.warning(f"⚠️ Completado con errores — **{total_deleted} eliminadas**, {errors} lote(s) fallido(s)")
+            if errors == 0: st.success(f"✅ Completado — **{total_deleted} visitas eliminadas**")
+            else: st.warning(f"⚠️ Completado con errores — **{total_deleted} eliminadas**, {errors} lote(s) fallido(s)")
 
 
 def page_visit_types_skills():
@@ -212,7 +209,6 @@ def page_visit_types_skills():
         "🔧 Skills Masivo",
     ])
 
-    # ── TAB 1: Tipos de Visita (una cuenta) ──────────────────────────────────
     with tab1:
         token_vt = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_vt_single")
 
@@ -235,14 +231,17 @@ def page_visit_types_skills():
                 rows_vt = read_excel_column(vf_single, ["label", "key"])
                 st.success(f"✅ {len(rows_vt)} tipo(s) cargados")
                 with st.expander("Ver"):
-                    for r in rows_vt:
-                        st.markdown(f"- **{r['label']}** → `{r['key']}`")
+                    for r in rows_vt: st.markdown(f"- **{r['label']}** → `{r['key']}`")
             except Exception as e:
                 rows_vt = []; st.error(str(e))
             if rows_vt and token_vt and st.button("🚀 Crear Tipos de Visita", type="primary", key="btn_vt_single"):
                 results = []; prog = st.progress(0); status = st.empty()
+                start_time = time.time()
                 for i, row in enumerate(rows_vt):
-                    status.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)})")
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(rows_vt) - (i + 1)) / rate
+                    status.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)}) — ETA: {int(eta)}s")
                     code, resp = sr_post("/v1/accounts/visit-types/", token_vt,
                                         [{"label": row["label"], "key": row["key"]}])
                     results.append({"label": row["label"], "code": code, "resp": resp})
@@ -250,7 +249,6 @@ def page_visit_types_skills():
                 status.empty(); prog.empty()
                 show_results(results, "label")
 
-    # ── TAB 2: Tipos de Visita Masivo ─────────────────────────────────────────
     with tab2:
         st.markdown("Crea tipos de visita en **múltiples cuentas**. Cada fila aplica al token indicado.")
 
@@ -282,9 +280,13 @@ def page_visit_types_skills():
                 rows_vt_masivo = []; st.error(str(e))
             if rows_vt_masivo and st.button("🚀 Crear Masivo", type="primary", key="btn_vt_masivo"):
                 results = []; prog = st.progress(0); status = st.empty()
+                start_time = time.time()
                 for i, row in enumerate(rows_vt_masivo):
-                    tok_p = mask_token(row["token"])
-                    status.info(f"Creando: **{row['label']}** en `{tok_p}` ({i+1}/{len(rows_vt_masivo)})")
+                    tok_p   = mask_token(row["token"])
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(rows_vt_masivo) - (i + 1)) / rate
+                    status.info(f"Creando: **{row['label']}** en `{tok_p}` ({i+1}/{len(rows_vt_masivo)}) — ETA: {int(eta)}s")
                     code, resp = sr_post("/v1/accounts/visit-types/", row["token"],
                                         [{"label": row["label"], "key": row["key"]}])
                     results.append({"label": f"{row['label']} ({tok_p})", "code": code, "resp": resp})
@@ -292,7 +294,6 @@ def page_visit_types_skills():
                 status.empty(); prog.empty()
                 show_results(results, "label")
 
-    # ── TAB 3: Skills (una cuenta) ────────────────────────────────────────────
     with tab3:
         token_sk = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_sk_single")
 
@@ -314,21 +315,23 @@ def page_visit_types_skills():
                 rows_sk = read_excel_column(sf_single, ["skill"])
                 st.success(f"✅ {len(rows_sk)} skill(s) cargados")
                 with st.expander("Ver"):
-                    for r in rows_sk:
-                        st.markdown(f"- {r['skill']}")
+                    for r in rows_sk: st.markdown(f"- {r['skill']}")
             except Exception as e:
                 rows_sk = []; st.error(str(e))
             if rows_sk and token_sk and st.button("🚀 Crear Skills", type="primary", key="btn_sk_single"):
                 results = []; prog = st.progress(0); status = st.empty()
+                start_time = time.time()
                 for i, row in enumerate(rows_sk):
-                    status.info(f"Creando: **{row['skill']}** ({i+1}/{len(rows_sk)})")
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(rows_sk) - (i + 1)) / rate
+                    status.info(f"Creando: **{row['skill']}** ({i+1}/{len(rows_sk)}) — ETA: {int(eta)}s")
                     code, resp = sr_post("/v1/routes/skills/", token_sk, {"skill": row["skill"]})
                     results.append({"skill": row["skill"], "code": code, "resp": resp})
                     prog.progress((i+1) / len(rows_sk))
                 status.empty(); prog.empty()
                 show_results(results, "skill")
 
-    # ── TAB 4: Skills Masivo ──────────────────────────────────────────────────
     with tab4:
         st.markdown("Crea skills en **múltiples cuentas**. Cada fila aplica al token indicado.")
 
@@ -359,9 +362,13 @@ def page_visit_types_skills():
                 rows_sk_masivo = []; st.error(str(e))
             if rows_sk_masivo and st.button("🚀 Crear Masivo", type="primary", key="btn_sk_masivo"):
                 results = []; prog = st.progress(0); status = st.empty()
+                start_time = time.time()
                 for i, row in enumerate(rows_sk_masivo):
-                    tok_p = mask_token(row["token"])
-                    status.info(f"Creando: **{row['skill']}** en `{tok_p}` ({i+1}/{len(rows_sk_masivo)})")
+                    tok_p   = mask_token(row["token"])
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(rows_sk_masivo) - (i + 1)) / rate
+                    status.info(f"Creando: **{row['skill']}** en `{tok_p}` ({i+1}/{len(rows_sk_masivo)}) — ETA: {int(eta)}s")
                     code, resp = sr_post("/v1/routes/skills/", row["token"], {"skill": row["skill"]})
                     results.append({"skill": f"{row['skill']} ({tok_p})", "code": code, "resp": resp})
                     prog.progress((i+1) / len(rows_sk_masivo))

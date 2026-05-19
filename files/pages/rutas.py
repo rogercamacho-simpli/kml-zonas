@@ -1,6 +1,7 @@
 import streamlit as st
 import openpyxl
 import io
+import time
 from datetime import date
 
 from utils.helpers import read_excel_column, coords_to_str, generate_excel_zones, decode_file, strip_rtf_codes, parse_polygons
@@ -48,11 +49,17 @@ def page_flotas():
 
                 st.success(f"✅ {len(fleet_map)} flotas · {len(vehicle_map)} vehículos · {len(user_map)} usuarios")
                 st.divider()
-
-                for row in rows:
+                prog = st.progress(0); status = st.empty()
+                start_time = time.time()
+                for i, row in enumerate(rows):
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(rows) - (i + 1)) / rate
                     fname = row["Nombre de flota"].strip()
+                    status.info(f"Procesando: **{fname}** ({i+1}/{len(rows)}) — ETA: {int(eta)}s")
                     if fname.lower() not in fleet_map:
-                        st.error(f"❌ **{fname}** — Flota no encontrada"); continue
+                        st.error(f"❌ **{fname}** — Flota no encontrada")
+                        prog.progress((i+1)/len(rows)); continue
                     fleet = fleet_map[fname.lower()]
                     vids, verrs = [], []
                     for v in [x.strip() for x in row["Vehículos"].split(",") if x.strip()]:
@@ -66,10 +73,10 @@ def page_flotas():
                     if uerrs: st.warning(f"⚠️ **{fname}** — Usuarios no encontrados: {', '.join(str(x) for x in uerrs)}")
                     code, _ = sr_put(f"/v1/fleets/{fleet['id']}/", token,
                                      {"id": fleet["id"], "name": fname, "vehicles": vids, "users": uids}, timeout=300)
-                    if code == 200:
-                        st.success(f"✅ **{fname}** — Actualizada ({len(vids)} vehículos · {len(uids)} usuarios)")
-                    else:
-                        st.error(f"❌ **{fname}** — Error {code}")
+                    if code == 200: st.success(f"✅ **{fname}** — Actualizada ({len(vids)} vehículos · {len(uids)} usuarios)")
+                    else:           st.error(f"❌ **{fname}** — Error {code}")
+                    prog.progress((i+1)/len(rows))
+                status.empty(); prog.empty()
         elif fleet_file and not token:
             st.warning("⚠️ Ingresa tu token.")
 
@@ -90,8 +97,12 @@ def page_flotas():
             if not fleet_ids: st.error("❌ No se encontraron IDs válidos."); return
             prog = st.progress(0); status = st.empty()
             ok_count = 0; err_count = 0
+            start_time = time.time()
             for i, fid in enumerate(fleet_ids):
-                status.info(f"Eliminando flota **{fid}** ({i+1}/{len(fleet_ids)})...")
+                elapsed = time.time() - start_time
+                rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                eta     = (len(fleet_ids) - (i + 1)) / rate
+                status.info(f"Eliminando flota **{fid}** ({i+1}/{len(fleet_ids)}) — ETA: {int(eta)}s")
                 code, _ = sr_delete(f"/v1/fleets/{fid}", token_del, timeout=30)
                 if code in [200, 204]: st.success(f"✅ Flota **{fid}** eliminada"); ok_count += 1
                 elif code == 401: st.error("❌ Token inválido."); status.empty(); prog.empty(); return
@@ -122,12 +133,16 @@ def page_iniciar_cerrar_rutas():
         route_ids = [l.strip() for l in route_ids_raw.strip().splitlines() if l.strip()]
         if not route_ids: st.error("❌ No se encontraron IDs."); return
         prog = st.progress(0); status = st.empty()
+        start_time = time.time()
         for i, route_id in enumerate(route_ids):
-            status.info(f"Procesando: **{route_id}** ({i+1}/{len(route_ids)})")
+            elapsed = time.time() - start_time
+            rate    = (i + 1) / elapsed if elapsed > 0 else 1
+            eta     = (len(route_ids) - (i + 1)) / rate
+            status.info(f"Procesando: **{route_id}** ({i+1}/{len(route_ids)}) — ETA: {int(eta)}s")
             code_get, route_data = sr_get(f"/v1/routes/routes/{route_id}/", token)
             if code_get != 200:
                 st.error(f"❌ **{route_id}** — Error {code_get}"); prog.progress((i+1)/len(route_ids)); continue
-            lat = route_data.get("location_start_latitude") if event_type == "ROUTE_STARTED" else route_data.get("location_end_latitude")
+            lat = route_data.get("location_start_latitude")  if event_type == "ROUTE_STARTED" else route_data.get("location_end_latitude")
             lng = route_data.get("location_start_longitude") if event_type == "ROUTE_STARTED" else route_data.get("location_end_longitude")
             if not lat or not lng:
                 st.warning(f"⚠️ **{route_id}** — Sin coordenadas"); prog.progress((i+1)/len(route_ids)); continue
@@ -135,8 +150,8 @@ def page_iniciar_cerrar_rutas():
                                    {"date_time": date_time, "latitude": float(lat), "longitude": float(lng),
                                     "route_id": route_id, "type": event_type})
             if code_post in [200, 201]: st.success(f"✅ **{route_id}** — {evento} registrado")
-            elif code_post == 401: st.error(f"❌ **{route_id}** — Token inválido")
-            else: st.error(f"❌ **{route_id}** — Error {code_post}")
+            elif code_post == 401:      st.error(f"❌ **{route_id}** — Token inválido")
+            else:                       st.error(f"❌ **{route_id}** — Error {code_post}")
             prog.progress((i+1)/len(route_ids))
         status.empty(); prog.empty()
 
@@ -165,14 +180,18 @@ def page_zonas():
                 st.warning("⚠️ Ingresa tu token para cargar zonas.")
             elif st.button("🚀 Cargar zonas", type="primary"):
                 prog = st.progress(0); status = st.empty()
+                start_time = time.time()
                 for i, p in enumerate(polygons):
-                    status.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)})")
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(polygons) - (i + 1)) / rate
+                    status.info(f"Cargando: **{p['name']}** ({i+1}/{len(polygons)}) — ETA: {int(eta)}s")
                     code, _ = sr_post("/v1/zones/", token,
                                       {"name": p["name"], "coordinates": coords_to_str(p["coords"]), "vehicles": []})
                     if code in [200, 201]: st.success(f"✅ {p['name']}")
-                    elif code == 400: st.warning(f"⚠️ {p['name']} — Ya existe")
-                    elif code == 401: st.error(f"❌ {p['name']} — Token inválido")
-                    else: st.error(f"❌ {p['name']} — Error {code}")
+                    elif code == 400:      st.warning(f"⚠️ {p['name']} — Ya existe")
+                    elif code == 401:      st.error(f"❌ {p['name']} — Token inválido")
+                    else:                  st.error(f"❌ {p['name']} — Error {code}")
                     prog.progress((i+1)/len(polygons))
                 status.empty(); prog.empty()
 
@@ -184,9 +203,9 @@ def page_zonas():
 
         if st.button("🔍 Consultar zonas", type="primary", disabled=not token_origen, key="btn_consultar_zonas"):
             code, data = sr_get("/v1/zones/", token_origen)
-            if code == 401: st.error("❌ Token inválido")
+            if code == 401:   st.error("❌ Token inválido")
             elif code != 200: st.error(f"❌ Error {code}")
-            else: st.session_state["zonas_origen"] = data
+            else:             st.session_state["zonas_origen"] = data
 
         if "zonas_origen" in st.session_state:
             zonas = st.session_state["zonas_origen"]
@@ -215,21 +234,25 @@ def page_zonas():
                          disabled=not (token_destino and seleccionadas), key="btn_copiar_zonas"):
                 prog = st.progress(0); status = st.empty()
                 ok_count = 0; err_count = 0
+                start_time = time.time()
                 for i, zona in enumerate(seleccionadas):
-                    status.info(f"Copiando: **{zona['name']}** ({i+1}/{len(seleccionadas)})")
+                    elapsed = time.time() - start_time
+                    rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                    eta     = (len(seleccionadas) - (i + 1)) / rate
+                    status.info(f"Copiando: **{zona['name']}** ({i+1}/{len(seleccionadas)}) — ETA: {int(eta)}s")
                     coords = zona.get("coordinates", [])
                     coords_str = "[" + ",".join(f"{{'lat':'{p['lat']}','lng':'{p['lng']}'}}" for p in coords) + "]"
                     code, _ = sr_post("/v1/zones/", token_destino,
                                       {"name": zona["name"], "coordinates": coords_str, "vehicles": []})
                     if code in [200, 201]: st.success(f"✅ {zona['name']}"); ok_count += 1
-                    elif code == 400: st.warning(f"⚠️ {zona['name']} — Ya existe")
-                    elif code == 401: st.error("❌ Token destino inválido."); status.empty(); prog.empty(); return
-                    else: st.error(f"❌ {zona['name']} — Error {code}"); err_count += 1
+                    elif code == 400:      st.warning(f"⚠️ {zona['name']} — Ya existe")
+                    elif code == 401:      st.error("❌ Token destino inválido."); status.empty(); prog.empty(); return
+                    else:                  st.error(f"❌ {zona['name']} — Error {code}"); err_count += 1
                     prog.progress((i+1)/len(seleccionadas))
                 status.empty(); prog.empty()
                 st.divider()
                 if err_count == 0: st.success(f"✅ Completado — **{ok_count} zonas copiadas**")
-                else: st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error")
+                else:              st.warning(f"⚠️ Completado — **{ok_count} copiadas**, {err_count} con error")
 
     with tab2:
         st.error("⚠️ **ADVERTENCIA:** La eliminación de zonas es permanente y no se puede deshacer.")
@@ -248,15 +271,19 @@ def page_zonas():
             if not zone_ids: st.error("❌ No se encontraron IDs válidos."); return
             prog = st.progress(0); status = st.empty()
             ok_count = 0; err_count = 0
+            start_time = time.time()
             for i, zid in enumerate(zone_ids):
-                status.info(f"Eliminando zona **{zid}** ({i+1}/{len(zone_ids)})...")
+                elapsed = time.time() - start_time
+                rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                eta     = (len(zone_ids) - (i + 1)) / rate
+                status.info(f"Eliminando zona **{zid}** ({i+1}/{len(zone_ids)}) — ETA: {int(eta)}s")
                 code, _ = sr_delete(f"/v1/zones/{zid}", token_del)
                 if code in [200, 204]: st.success(f"✅ Zona **{zid}** eliminada"); ok_count += 1
-                elif code == 401: st.error("❌ Token inválido."); status.empty(); prog.empty(); return
-                elif code == 404: st.warning(f"⚠️ **{zid}** — No encontrada")
-                else: st.error(f"❌ **{zid}** — Error {code}"); err_count += 1
+                elif code == 401:      st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+                elif code == 404:      st.warning(f"⚠️ **{zid}** — No encontrada")
+                else:                  st.error(f"❌ **{zid}** — Error {code}"); err_count += 1
                 prog.progress((i+1)/len(zone_ids))
             status.empty(); prog.empty()
             st.divider()
             if err_count == 0: st.success(f"✅ Completado — **{ok_count} zonas eliminadas**")
-            else: st.warning(f"⚠️ Completado con errores — **{ok_count} eliminadas**, {err_count} con error")
+            else:              st.warning(f"⚠️ Completado con errores — **{ok_count} eliminadas**, {err_count} con error")
