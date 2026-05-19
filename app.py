@@ -259,7 +259,6 @@ def page_copiar_configs():
 
         if st.button("🚀 Copiar configs", type="primary",
                      disabled=not (token_destino and seleccionadas), key="btn_copiar_configs"):
-            # 1. Consultar configs del destino
             try:
                 rd = requests.get("http://api.simpliroute.com/v1/accounts/configs/",
                                   headers={"Authorization": f"Token {token_destino}", "Content-Type": "application/json"}, timeout=30)
@@ -464,7 +463,6 @@ def page_permisos_usuario():
     if not st.button("🔍 Consultar", type="primary", disabled=not (token and user_id)):
         return
 
-    # 1. Obtener account_id via /me
     try:
         rme = requests.get("http://api.simpliroute.com/v1/accounts/me",
                            headers={"Authorization": f"Token {token}", "Content-Type": "application/json"}, timeout=15)
@@ -478,7 +476,6 @@ def page_permisos_usuario():
     except Exception as e:
         st.error(f"❌ Error: {e}"); return
 
-    # 2. Obtener usuario
     try:
         ru = requests.get(f"http://api.simpliroute.com/v1/accounts/users/{user_id.strip()}/",
                           headers={"Authorization": f"Token {token}"}, timeout=15)
@@ -490,7 +487,6 @@ def page_permisos_usuario():
     except Exception as e:
         st.error(f"❌ Error consultando usuario: {e}"); return
 
-    # Info del usuario
     st.divider()
     c1, c2, c3 = st.columns(3)
     c1.markdown(f"**Nombre**<br>{user.get('name','—')}", unsafe_allow_html=True)
@@ -499,7 +495,6 @@ def page_permisos_usuario():
     c3.markdown(f"**Estado**<br>{estado}", unsafe_allow_html=True)
     st.caption(f"📧 {user.get('email') or 'Sin email'} · ID: {user.get('id')} · Cuenta: {account_id}")
 
-    # 3. Obtener roles de la cuenta
     roles = []
     try:
         rr = requests.get(f"https://api-gateway.simpliroute.com/v1/accounts/{account_id}/roles/",
@@ -509,7 +504,6 @@ def page_permisos_usuario():
     except Exception:
         pass
 
-    # 4. Determinar rol y permisos
     custom_role_name = user.get("custom_role_name")
     st.divider()
 
@@ -1343,62 +1337,192 @@ def page_reenviar_webhooks():
 # ── FEATURE: TIPOS DE VISITA Y SKILLS ────────────────────────────────────────
 def page_visit_types_skills():
     st.title("🏷️ Tipos de Visita y Skills")
-    token = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_vts")
-    st.markdown("---"); st.subheader("🔧 Skills")
-    def tpl_skills():
-        wb=openpyxl.Workbook(); ws=wb.active; ws.title="Skills"
-        ws.append(["skill"]); ws.append(["Manejo de carga pesada"]); ws.append(["Refrigeración"])
-        ws.column_dimensions["A"].width=35; buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Plantilla Skills", data=tpl_skills(), file_name="plantilla_skills.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    sf = st.file_uploader("📂 Excel Skills", type=["xlsx"], key="upload_skills")
-    if sf:
-        try:
-            rows = read_excel_column(sf, ["skill"])
-            st.success(f"✅ {len(rows)} skill(s)")
-            with st.expander("Ver"): [st.markdown(f"- {r['skill']}") for r in rows]
-        except Exception as e:
-            rows = []; st.error(str(e))
-        if rows and token and st.button("🚀 Crear Skills", type="primary", key="btn_skills"):
-            results=[]; prog=st.progress(0); status=st.empty()
-            for i, row in enumerate(rows):
-                status.info(f"Creando: **{row['skill']}** ({i+1}/{len(rows)})")
-                try:
-                    r=requests.post("http://api.simpliroute.com/v1/routes/skills/",
-                                    headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
-                                    json={"skill":row["skill"]}, timeout=15)
-                    code,resp=r.status_code,r.json()
-                except Exception as e: code,resp=None,str(e)
-                results.append({"skill":row["skill"],"code":code,"resp":resp}); prog.progress((i+1)/len(rows))
-            status.empty(); prog.empty(); show_results(results, "skill")
-    st.markdown("---"); st.subheader("📋 Tipos de Visita")
-    def tpl_vt():
-        wb=openpyxl.Workbook(); ws=wb.active; ws.title="Tipos de Visita"
-        ws.append(["label","key"]); ws.append(["Entrega express","entrega_express"]); ws.append(["Retiro","retiro"])
-        ws.column_dimensions["A"].width=30; ws.column_dimensions["B"].width=30
-        buf=io.BytesIO(); wb.save(buf); buf.seek(0); return buf
-    st.download_button("📥 Plantilla Tipos de Visita", data=tpl_vt(), file_name="plantilla_tipos_visita.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    vf = st.file_uploader("📂 Excel Tipos de Visita", type=["xlsx"], key="upload_vt")
-    if vf:
-        try:
-            rows_vt = read_excel_column(vf, ["label","key"])
-            st.success(f"✅ {len(rows_vt)} tipo(s)")
-            with st.expander("Ver"): [st.markdown(f"- **{r['label']}** → `{r['key']}`") for r in rows_vt]
-        except Exception as e:
-            rows_vt=[]; st.error(str(e))
-        if rows_vt and token and st.button("🚀 Crear Tipos de Visita", type="primary", key="btn_vt"):
-            results=[]; prog=st.progress(0); status=st.empty()
-            for i, row in enumerate(rows_vt):
-                status.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)})")
-                try:
-                    r=requests.post("http://api.simpliroute.com/v1/accounts/visit-types/",
-                                    headers={"Authorization":f"Token {token}","Content-Type":"application/json"},
-                                    json=[{"label":row["label"],"key":row["key"]}], timeout=15)
-                    code,resp=r.status_code,r.json()
-                except Exception as e: code,resp=None,str(e)
-                results.append({"label":row["label"],"code":code,"resp":resp}); prog.progress((i+1)/len(rows_vt))
-            status.empty(); prog.empty(); show_results(results, "label")
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📋 Tipos de Visita",
+        "📋 Tipos de Visita Masivo",
+        "🔧 Skills",
+        "🔧 Skills Masivo",
+    ])
+
+    # ── TAB 1: Tipos de Visita (una cuenta) ──────────────────────────────────
+    with tab1:
+        token_vt = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_vt_single")
+
+        def tpl_vt_single():
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Tipos de Visita"
+            ws.append(["label", "key"])
+            ws.append(["Entrega express", "entrega_express"])
+            ws.append(["Retiro", "retiro"])
+            ws.column_dimensions["A"].width = 30
+            ws.column_dimensions["B"].width = 30
+            buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+        st.download_button("📥 Plantilla Tipos de Visita", data=tpl_vt_single(),
+                           file_name="plantilla_tipos_visita.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="dl_tpl_vt_single")
+        vf_single = st.file_uploader("📂 Excel Tipos de Visita", type=["xlsx"], key="upload_vt_single")
+        if vf_single:
+            try:
+                rows_vt = read_excel_column(vf_single, ["label", "key"])
+                st.success(f"✅ {len(rows_vt)} tipo(s) cargados")
+                with st.expander("Ver"):
+                    for r in rows_vt:
+                        st.markdown(f"- **{r['label']}** → `{r['key']}`")
+            except Exception as e:
+                rows_vt = []; st.error(str(e))
+            if rows_vt and token_vt and st.button("🚀 Crear Tipos de Visita", type="primary", key="btn_vt_single"):
+                results = []; prog = st.progress(0); status = st.empty()
+                for i, row in enumerate(rows_vt):
+                    status.info(f"Creando: **{row['label']}** ({i+1}/{len(rows_vt)})")
+                    try:
+                        r = requests.post("http://api.simpliroute.com/v1/accounts/visit-types/",
+                                          headers={"Authorization": f"Token {token_vt}", "Content-Type": "application/json"},
+                                          json=[{"label": row["label"], "key": row["key"]}], timeout=15)
+                        code, resp = r.status_code, r.json()
+                    except Exception as e:
+                        code, resp = None, str(e)
+                    results.append({"label": row["label"], "code": code, "resp": resp})
+                    prog.progress((i+1) / len(rows_vt))
+                status.empty(); prog.empty()
+                show_results(results, "label")
+
+    # ── TAB 2: Tipos de Visita Masivo (múltiples cuentas) ────────────────────
+    with tab2:
+        st.markdown("Crea tipos de visita en **múltiples cuentas**. Cada fila del Excel aplica a la cuenta del token indicado.")
+
+        def tpl_vt_masivo():
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Tipos de Visita Masivo"
+            ws.append(["token", "label", "key"])
+            ws.append(["TOKEN_CUENTA_1", "Entrega express", "entrega_express"])
+            ws.append(["TOKEN_CUENTA_1", "Retiro", "retiro"])
+            ws.append(["TOKEN_CUENTA_2", "Entrega programada", "entrega_programada"])
+            ws.column_dimensions["A"].width = 40
+            ws.column_dimensions["B"].width = 30
+            ws.column_dimensions["C"].width = 30
+            buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+        st.download_button("📥 Plantilla Masiva", data=tpl_vt_masivo(),
+                           file_name="plantilla_tipos_visita_masivo.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="dl_tpl_vt_masivo")
+        vf_masivo = st.file_uploader("📂 Excel Masivo", type=["xlsx"], key="upload_vt_masivo")
+        if vf_masivo:
+            try:
+                rows_vt_masivo = read_excel_column(vf_masivo, ["token", "label", "key"])
+                cuentas_vt = len(set(r["token"] for r in rows_vt_masivo if r["token"]))
+                st.success(f"✅ {len(rows_vt_masivo)} tipo(s) para {cuentas_vt} cuenta(s)")
+                with st.expander("Ver"):
+                    for r in rows_vt_masivo:
+                        tok_p = r["token"][:8] + "..." if len(r["token"]) > 8 else r["token"]
+                        st.markdown(f"- `{tok_p}` → **{r['label']}** / `{r['key']}`")
+            except Exception as e:
+                rows_vt_masivo = []; st.error(str(e))
+            if rows_vt_masivo and st.button("🚀 Crear Masivo", type="primary", key="btn_vt_masivo"):
+                results = []; prog = st.progress(0); status = st.empty()
+                for i, row in enumerate(rows_vt_masivo):
+                    tok_p = row["token"][:8] + "..." if len(row["token"]) > 8 else row["token"]
+                    status.info(f"Creando: **{row['label']}** en `{tok_p}` ({i+1}/{len(rows_vt_masivo)})")
+                    try:
+                        r = requests.post("http://api.simpliroute.com/v1/accounts/visit-types/",
+                                          headers={"Authorization": f"Token {row['token']}", "Content-Type": "application/json"},
+                                          json=[{"label": row["label"], "key": row["key"]}], timeout=15)
+                        code, resp = r.status_code, r.json()
+                    except Exception as e:
+                        code, resp = None, str(e)
+                    results.append({"label": f"{row['label']} ({tok_p})", "code": code, "resp": resp})
+                    prog.progress((i+1) / len(rows_vt_masivo))
+                status.empty(); prog.empty()
+                show_results(results, "label")
+
+    # ── TAB 3: Skills (una cuenta) ────────────────────────────────────────────
+    with tab3:
+        token_sk = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_sk_single")
+
+        def tpl_skills_single():
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Skills"
+            ws.append(["skill"])
+            ws.append(["Manejo de carga pesada"])
+            ws.append(["Refrigeración"])
+            ws.column_dimensions["A"].width = 35
+            buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+        st.download_button("📥 Plantilla Skills", data=tpl_skills_single(),
+                           file_name="plantilla_skills.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="dl_tpl_sk_single")
+        sf_single = st.file_uploader("📂 Excel Skills", type=["xlsx"], key="upload_sk_single")
+        if sf_single:
+            try:
+                rows_sk = read_excel_column(sf_single, ["skill"])
+                st.success(f"✅ {len(rows_sk)} skill(s) cargados")
+                with st.expander("Ver"):
+                    for r in rows_sk:
+                        st.markdown(f"- {r['skill']}")
+            except Exception as e:
+                rows_sk = []; st.error(str(e))
+            if rows_sk and token_sk and st.button("🚀 Crear Skills", type="primary", key="btn_sk_single"):
+                results = []; prog = st.progress(0); status = st.empty()
+                for i, row in enumerate(rows_sk):
+                    status.info(f"Creando: **{row['skill']}** ({i+1}/{len(rows_sk)})")
+                    try:
+                        r = requests.post("http://api.simpliroute.com/v1/routes/skills/",
+                                          headers={"Authorization": f"Token {token_sk}", "Content-Type": "application/json"},
+                                          json={"skill": row["skill"]}, timeout=15)
+                        code, resp = r.status_code, r.json()
+                    except Exception as e:
+                        code, resp = None, str(e)
+                    results.append({"skill": row["skill"], "code": code, "resp": resp})
+                    prog.progress((i+1) / len(rows_sk))
+                status.empty(); prog.empty()
+                show_results(results, "skill")
+
+    # ── TAB 4: Skills Masivo (múltiples cuentas) ─────────────────────────────
+    with tab4:
+        st.markdown("Crea skills en **múltiples cuentas**. Cada fila del Excel aplica a la cuenta del token indicado.")
+
+        def tpl_skills_masivo():
+            wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Skills Masivo"
+            ws.append(["token", "skill"])
+            ws.append(["TOKEN_CUENTA_1", "Manejo de carga pesada"])
+            ws.append(["TOKEN_CUENTA_1", "Refrigeración"])
+            ws.append(["TOKEN_CUENTA_2", "Conducción nocturna"])
+            ws.column_dimensions["A"].width = 40
+            ws.column_dimensions["B"].width = 35
+            buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf
+
+        st.download_button("📥 Plantilla Masiva", data=tpl_skills_masivo(),
+                           file_name="plantilla_skills_masivo.xlsx",
+                           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           key="dl_tpl_sk_masivo")
+        sf_masivo = st.file_uploader("📂 Excel Masivo", type=["xlsx"], key="upload_sk_masivo")
+        if sf_masivo:
+            try:
+                rows_sk_masivo = read_excel_column(sf_masivo, ["token", "skill"])
+                cuentas_sk = len(set(r["token"] for r in rows_sk_masivo if r["token"]))
+                st.success(f"✅ {len(rows_sk_masivo)} skill(s) para {cuentas_sk} cuenta(s)")
+                with st.expander("Ver"):
+                    for r in rows_sk_masivo:
+                        tok_p = r["token"][:8] + "..." if len(r["token"]) > 8 else r["token"]
+                        st.markdown(f"- `{tok_p}` → **{r['skill']}**")
+            except Exception as e:
+                rows_sk_masivo = []; st.error(str(e))
+            if rows_sk_masivo and st.button("🚀 Crear Masivo", type="primary", key="btn_sk_masivo"):
+                results = []; prog = st.progress(0); status = st.empty()
+                for i, row in enumerate(rows_sk_masivo):
+                    tok_p = row["token"][:8] + "..." if len(row["token"]) > 8 else row["token"]
+                    status.info(f"Creando: **{row['skill']}** en `{tok_p}` ({i+1}/{len(rows_sk_masivo)})")
+                    try:
+                        r = requests.post("http://api.simpliroute.com/v1/routes/skills/",
+                                          headers={"Authorization": f"Token {row['token']}", "Content-Type": "application/json"},
+                                          json={"skill": row["skill"]}, timeout=15)
+                        code, resp = r.status_code, r.json()
+                    except Exception as e:
+                        code, resp = None, str(e)
+                    results.append({"skill": f"{row['skill']} ({tok_p})", "code": code, "resp": resp})
+                    prog.progress((i+1) / len(rows_sk_masivo))
+                status.empty(); prog.empty()
+                show_results(results, "skill")
 
 
 # ── FEATURE: VALIDACIÓN DE GPS ────────────────────────────────────────────────
