@@ -5,14 +5,7 @@ import time
 from datetime import date
 
 from utils.helpers import read_excel_column, show_results, mask_token
-from utils.api import sr_get, sr_post, sr_patch
-
-
-def _eta_status(status, i, total, start_time, label):
-    elapsed = time.time() - start_time
-    rate    = (i + 1) / elapsed if elapsed > 0 else 1
-    eta     = (total - (i + 1)) / rate
-    status.info(f"{label} ({i+1}/{total}) — ETA: {int(eta)}s")
+from utils.api import sr_get, sr_post, sr_patch, sr_delete, API_GW
 
 
 def page_agregar_seller():
@@ -54,20 +47,14 @@ def page_agregar_seller():
             ids, errs = [], []
             for l in visit_ids_raw.strip().splitlines():
                 l = l.strip()
-                try:
-                    ids.append(int(l))
-                except:
-                    errs.append(l)
-            if errs:
-                st.error(f"❌ IDs inválidos: {', '.join(errs)}")
-                return
+                try: ids.append(int(l))
+                except: errs.append(l)
+            if errs: st.error(f"❌ IDs inválidos: {', '.join(errs)}"); return
             with st.spinner(f"Asignando a {len(ids)} visitas..."):
                 code, _ = sr_patch("/v1/routes/visits/", st.session_state["seller_token"],
                                    [{"id": vid, "seller": seller_uuid} for vid in ids], timeout=120)
-            if code in [200, 201]:
-                st.success(f"✅ Seller asignado a {len(ids)} visitas")
-            else:
-                st.error(f"❌ Error {code}")
+            if code in [200, 201]: st.success(f"✅ Seller asignado a {len(ids)} visitas")
+            else: st.error(f"❌ Error {code}")
 
 
 def page_edicion_visitas():
@@ -105,9 +92,7 @@ def page_edicion_visitas():
             if not l: continue
             try: visit_ids.append(int(l))
             except: st.warning(f"⚠️ ID inválido ignorado: {l}")
-        if not visit_ids:
-            st.error("❌ No se encontraron IDs válidos.")
-            return
+        if not visit_ids: st.error("❌ No se encontraron IDs válidos."); return
 
         def build_payload(vid):
             p = {"id": vid}
@@ -119,7 +104,7 @@ def page_edicion_visitas():
 
         prog = st.progress(0); status = st.empty()
         ok_count = 0; err_count = 0
-        batches    = [visit_ids[i:i+500] for i in range(0, len(visit_ids), 500)]
+        batches = [visit_ids[i:i+500] for i in range(0, len(visit_ids), 500)]
         start_time = time.time()
         for i, batch in enumerate(batches):
             elapsed = time.time() - start_time
@@ -176,7 +161,7 @@ def page_eliminacion_visitas():
 
         confirm = st.checkbox("✅ Confirmo que quiero eliminar estas visitas de forma permanente")
         if confirm and st.button("🗑️ Eliminar visitas", type="primary", disabled=not token):
-            batches    = [visit_ids[i:i+2000] for i in range(0, len(visit_ids), 2000)]
+            batches = [visit_ids[i:i+2000] for i in range(0, len(visit_ids), 2000)]
             prog = st.progress(0); status = st.empty()
             total_deleted = 0; errors = 0
             start_time = time.time()
@@ -202,13 +187,16 @@ def page_eliminacion_visitas():
 
 def page_visit_types_skills():
     st.title("🏷️ Tipos de Visita y Skills")
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📋 Tipos de Visita",
         "📋 Tipos de Visita Masivo",
+        "🗑️ Eliminar Tipos de Visita",
         "🔧 Skills",
         "🔧 Skills Masivo",
+        "🗑️ Eliminar Skills",
     ])
 
+    # ── TAB 1: Tipos de Visita (una cuenta) ──────────────────────────────────
     with tab1:
         token_vt = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_vt_single")
 
@@ -249,6 +237,7 @@ def page_visit_types_skills():
                 status.empty(); prog.empty()
                 show_results(results, "label")
 
+    # ── TAB 2: Tipos de Visita Masivo ─────────────────────────────────────────
     with tab2:
         st.markdown("Crea tipos de visita en **múltiples cuentas**. Cada fila aplica al token indicado.")
 
@@ -294,7 +283,40 @@ def page_visit_types_skills():
                 status.empty(); prog.empty()
                 show_results(results, "label")
 
+    # ── TAB 3: Eliminar Tipos de Visita ───────────────────────────────────────
     with tab3:
+        st.error("⚠️ **ADVERTENCIA:** La eliminación es permanente y no se puede deshacer.")
+        token_del_vt = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_del_vt")
+        st.caption("Pega los IDs de tipo de visita uno por línea:\n```\n32238\n32239\n```")
+        vt_ids_raw = st.text_area("IDs", placeholder="32238\n32239", height=180, label_visibility="collapsed", key="vt_ids_del")
+        confirm_vt = st.checkbox("✅ Confirmo que quiero eliminar estos tipos de visita de forma permanente", key="confirm_del_vt")
+
+        if st.button("🗑️ Eliminar Tipos de Visita", type="primary",
+                     disabled=not (token_del_vt and vt_ids_raw and confirm_vt)):
+            vt_ids = []
+            for l in vt_ids_raw.strip().splitlines():
+                l = l.strip()
+                if not l: continue
+                try: vt_ids.append(int(l))
+                except: st.warning(f"⚠️ ID inválido ignorado: {l}")
+            if not vt_ids: st.error("❌ No se encontraron IDs válidos."); return
+
+            with st.spinner(f"Eliminando {len(vt_ids)} tipo(s) de visita..."):
+                code, resp = sr_delete(
+                    "/v1/accounts/visit-types/",
+                    token_del_vt,
+                    base=API_GW,
+                    json={"visit_type_ids": vt_ids},
+                )
+            if code in [200, 204]:
+                st.success(f"✅ {len(vt_ids)} tipo(s) de visita eliminados")
+            elif code == 401:
+                st.error("❌ Token inválido")
+            else:
+                st.error(f"❌ Error {code}: {resp}")
+
+    # ── TAB 4: Skills (una cuenta) ────────────────────────────────────────────
+    with tab4:
         token_sk = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_sk_single")
 
         def tpl_skills_single():
@@ -332,7 +354,8 @@ def page_visit_types_skills():
                 status.empty(); prog.empty()
                 show_results(results, "skill")
 
-    with tab4:
+    # ── TAB 5: Skills Masivo ──────────────────────────────────────────────────
+    with tab5:
         st.markdown("Crea skills en **múltiples cuentas**. Cada fila aplica al token indicado.")
 
         def tpl_skills_masivo():
@@ -374,3 +397,44 @@ def page_visit_types_skills():
                     prog.progress((i+1) / len(rows_sk_masivo))
                 status.empty(); prog.empty()
                 show_results(results, "skill")
+
+    # ── TAB 6: Eliminar Skills ────────────────────────────────────────────────
+    with tab6:
+        st.error("⚠️ **ADVERTENCIA:** La eliminación es permanente y no se puede deshacer.")
+        token_del_sk = st.text_input("🔑 Token de SimpliRoute", type="password", key="token_del_sk")
+        st.caption("Pega los IDs de skill uno por línea:\n```\n372054\n372228\n```")
+        sk_ids_raw = st.text_area("IDs", placeholder="372054\n372228", height=180, label_visibility="collapsed", key="sk_ids_del")
+        confirm_sk = st.checkbox("✅ Confirmo que quiero eliminar estos skills de forma permanente", key="confirm_del_sk")
+
+        if st.button("🗑️ Eliminar Skills", type="primary",
+                     disabled=not (token_del_sk and sk_ids_raw and confirm_sk)):
+            sk_ids = []
+            for l in sk_ids_raw.strip().splitlines():
+                l = l.strip()
+                if not l: continue
+                try: sk_ids.append(int(l))
+                except: st.warning(f"⚠️ ID inválido ignorado: {l}")
+            if not sk_ids: st.error("❌ No se encontraron IDs válidos."); return
+
+            prog = st.progress(0); status = st.empty()
+            ok_count = 0; err_count = 0
+            start_time = time.time()
+            for i, sid in enumerate(sk_ids):
+                elapsed = time.time() - start_time
+                rate    = (i + 1) / elapsed if elapsed > 0 else 1
+                eta     = (len(sk_ids) - (i + 1)) / rate
+                status.info(f"Eliminando skill **{sid}** ({i+1}/{len(sk_ids)}) — ETA: {int(eta)}s")
+                code, _ = sr_delete(f"/v1/routes/skills/{sid}/", token_del_sk, base=API_GW)
+                if code in [200, 204]:
+                    st.success(f"✅ Skill **{sid}** eliminado"); ok_count += 1
+                elif code == 401:
+                    st.error("❌ Token inválido."); status.empty(); prog.empty(); return
+                elif code == 404:
+                    st.warning(f"⚠️ **{sid}** — No encontrado")
+                else:
+                    st.error(f"❌ **{sid}** — Error {code}"); err_count += 1
+                prog.progress((i+1)/len(sk_ids))
+            status.empty(); prog.empty()
+            st.divider()
+            if err_count == 0: st.success(f"✅ Completado — **{ok_count} skill(s) eliminados**")
+            else: st.warning(f"⚠️ Completado con errores — **{ok_count} eliminados**, {err_count} con error")
